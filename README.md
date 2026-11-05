@@ -48,7 +48,7 @@ Launch arguments of `servo.launch.py`:
 
 | Argument | Default | Values |
 |---|---|---|
-| `detector` | `grounding_dino` | `grounding_dino`, `owlv2`, `yolo_world` |
+| `detector` | `grounding_dino` | `grounding_dino`, `owlv2`, `yolo_world`, `ollama_vlm` |
 | `prompt` | `red box` | any text, objects in the world: red box, blue cylinder, yellow mug |
 | `tracker` | `csrt` | `csrt`, `kcf`, `none` |
 | `refiner` | `none` | `none`, `sam2` |
@@ -60,6 +60,20 @@ Setting the reference pose from the current view (move the arm there first):
 `ros2 service call /ibvs_node/capture_reference std_srvs/srv/Trigger`.
 
 Model weights are downloaded on first use into the `models` Docker volume.
+
+### Vision-language models (Qwen3-VL, Gemma 4) via Ollama
+
+```bash
+docker compose --profile vlm up -d      # Ollama on port 11435, pulls the models once (~13 GB)
+docker compose exec dev bash
+ros2 launch vs_bringup servo.launch.py detector:=ollama_vlm prompt:="red box" detector_period:=2.0
+```
+
+The model is chosen with `VS_OLLAMA_MODEL` (default `qwen3-vl:8b-instruct`, also `gemma4:e4b`).
+An Ollama that already runs on the host can be used instead by setting
+`VS_OLLAMA_URL=http://localhost:11434`; do not run both, each loads its own copy into VRAM.
+A VLM call takes about 1 s (10–20 s for the first one, which loads the model), the tracker
+carries the control loop in between.
 
 ## 4. Structure
 
@@ -93,5 +107,6 @@ ros2_ws/src/
 - Robotiq 2F-85: PickNik `ros2_robotiq_gripper` (BSD-3), RealSense D435: Intel `realsense-ros` (Apache 2.0).
 - Grounding DINO (IDEA-Research, Apache 2.0), OWLv2 (Google, Apache 2.0) via Hugging Face transformers.
 - YOLO-World and SAM 2 wrappers: Ultralytics (AGPL-3.0); SAM 2 weights by Meta (Apache 2.0).
+- Qwen3-VL (Alibaba, Apache 2.0) and Gemma 4 (Google, Apache 2.0) served by Ollama (MIT).
 - IBVS features: O. Tahri, F. Chaumette, "Point-based and region-based image moments for visual
   servoing of planar objects", IEEE T-RO 2005.

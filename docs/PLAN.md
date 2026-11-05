@@ -65,8 +65,10 @@ same `Detector` interface, so the node, the tracker and the controller never cha
 | **Philip** | RTX 3050, ~4 GB | **YOLO-World** (+ YOLOE if time) | Real-time open-vocabulary detector that fits 4 GB; baseline for "fast but less precise" |
 | **Jiayi** | to check | **OWLv2** + **Florence-2** | Two different families (CLIP-style vs. generative VLM grounding), good material for the comparison chapter |
 
-Stretch goal for whoever is ahead: a VLM as detector, to show the latency extreme
-(seconds per call, the tracker has to carry the loop). Candidates that fit 16 GB VRAM:
+VLMs as detector (`detector:=ollama_vlm`, served by the compose service `ollama`) show the
+latency extreme: the tracker has to carry the loop. First test on a synthetic image (3080 Ti,
+after warm-up): Qwen3-VL-8B 0.8 s, Gemma 4 E4B 0.6 s, Qwen3.5-9B 1.1 s per call, boxes within a
+few pixels; the first call loads the model (11–17 s). Candidates that fit 16 GB VRAM:
 
 | VLM | Size | Note |
 |---|---|---|
