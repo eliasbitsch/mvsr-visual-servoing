@@ -87,14 +87,40 @@ after the other; Qwen3-VL-8B needs 5.4 GiB VRAM.
 
 So that the numbers are comparable, every FM owner reports on the **same recorded image set**:
 
-1. Record ~200 frames from the simulation with several objects, distances and lighting
-   (`ros2 bag record`), ground-truth boxes come from projecting the `/gt/*` object poses.
-2. Prompts per object, at least: plain name ("box"), name + colour ("red box"),
-   descriptive ("a small red cube on the floor"), wrong/ambiguous prompt (negative test).
-3. Report per model × prompt: detection rate, mean IoU to ground truth, false positives,
-   latency mean / p95 on the 3080 Ti, VRAM.
-4. Closed-loop: servoing success rate and convergence time with detector periods
+1. A clutter world `vs_world_clutter.sdf` with realistic textured objects (YCB / Google Scanned
+   Objects on Gazebo Fuel, NVIDIA SimReady Central where something fits; SimReady is OpenUSD and
+   needs a conversion per object) and **distractors that only the prompt can separate**: two
+   drills that differ in colour and size, a large and a small mug, one partly occluded object.
+2. Ground-truth boxes from a Gazebo `boundingbox_camera` sensor next to the colour camera, so
+   IoU and "right instance" are computed automatically. Record ~200 frames at several distances
+   and lighting conditions.
+3. Prompt levels, the same for every object:
+
+   | Level | Example | Tests |
+   |---|---|---|
+   | category | "drill" | basic recognition |
+   | attribute | "green drill" | colour |
+   | compound | "small green drill with black handle" | several attributes at once |
+   | relational | "the drill next to the mug" | spatial understanding |
+   | part | "handle of the drill" | needed for grasping |
+   | negative | "hammer" (not in the scene) | false positives |
+
+4. Report per model × prompt level: right-instance rate, mean IoU, false positives on negative
+   prompts, latency mean / p95 on the 3080 Ti, VRAM. Expected: Grounding DINO / OWLv2 / YOLO-World
+   latch onto the noun and pick the wrong drill on compound and relational prompts; VLMs are more
+   accurate but 10–50x slower. This trade-off is the core result of the FM variant.
+5. Closed-loop: servoing success rate and convergence time with detector periods
    0.2 s / 1 s / 5 s, with and without tracker.
+
+### Own pipeline experiment (Elias, branch `feature/dino-sam2`)
+
+Once `main` is clean (smooth tracking, `/gt/*` topics, FM image), branch off and try:
+- **Grounding DINO + SAM 2 as tracker** (`tracker:=sam2`): DINO finds the object rarely from text,
+  SAM 2 propagates the mask every frame, which also gives the orientation for yaw control.
+- **SAM 3 / 3.1** as a single model that detects from text and tracks in streaming mode, as the
+  counterpart: two specialised models vs. one general one, compared on speed and on the hard
+  prompt levels above.
+Merge into `main` only if it beats the current detector + CSRT pipeline.
 
 ## Work split beyond the FMs
 
