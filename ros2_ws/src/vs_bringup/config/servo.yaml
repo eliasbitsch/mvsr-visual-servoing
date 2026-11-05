@@ -43,3 +43,13 @@ ibvs_node:
     feature_timeout: 0.5
     converged_threshold: 0.01
     converged_hold_time: 1.0
+
+    # Motion guard: stop if self-collision (closer than margin) or a workspace violation is
+    # predicted within safety_lookahead seconds. Moving away from a violation stays allowed.
+    collision_margin: 0.01
+    safety_lookahead: 0.2
+    min_height: 0.03
+    height_frames: [tool0, camera_link, robotiq_85_left_finger_tip_link,
+                    robotiq_85_right_finger_tip_link]
+    # tool0 in base_link: x_min, y_min, z_min, x_max, y_max, z_max [m]
+    workspace: [0.15, -0.7, 0.0, 1.0, 0.7, 1.2]

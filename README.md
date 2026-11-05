@@ -3,7 +3,8 @@
 ABB GoFa (CRB 15000-5) with Robotiq 2F-85 and an eye-in-hand Intel RealSense D435 in Gazebo
 Harmonic. A foundation model finds the target from a text prompt, a tracker follows it on every
 frame, and an IBVS controller drives the camera into the reference pose.
-Team plan and FM assignment: [docs/PLAN.md](docs/PLAN.md).
+Team plan and FM assignment: [docs/PLAN.md](docs/PLAN.md). Joints, frames, commands and
+safety rules of the cell: [docs/ROBOT.md](docs/ROBOT.md).
 
 Stack: Ubuntu 24.04, ROS 2 Jazzy, Gazebo Harmonic, OpenCV 4.12 (Python), ros2_control,
 MoveIt 2, pinocchio, PyTorch (CUDA 12.4), Hugging Face transformers, Ultralytics.
@@ -26,6 +27,8 @@ docker compose exec dev bash
 ```
 
 Native Ubuntu only: run `xhost +local:docker` once per login so windows can open.
+WSL only: keep a WSL terminal open while working. WSL shuts its VM down when no WSL process is
+left, which stops all containers (they exit with code 255).
 
 ## 3. Run
 
@@ -48,7 +51,7 @@ Launch arguments of `servo.launch.py`:
 
 | Argument | Default | Values |
 |---|---|---|
-| `detector` | `grounding_dino` | `grounding_dino`, `owlv2`, `yolo_world`, `ollama_vlm` |
+| `detector` | `grounding_dino` | `grounding_dino`, `owlv2`, `yolo_world`, `vlm` |
 | `prompt` | `red box` | any text, objects in the world: red box, blue cylinder, yellow mug |
 | `tracker` | `csrt` | `csrt`, `kcf`, `none` |
 | `refiner` | `none` | `none`, `sam2` |
@@ -66,21 +69,28 @@ Model weights are downloaded on first use into the `models` Docker volume.
 ```bash
 docker compose --profile vlm up -d      # Ollama on port 11435, pulls the models once (~13 GB)
 docker compose exec dev bash
-ros2 launch vs_bringup servo.launch.py detector:=ollama_vlm prompt:="red box" detector_period:=2.0
+ros2 launch vs_bringup servo.launch.py detector:=vlm prompt:="red box" detector_period:=2.0
 ```
 
-The model is chosen with `VS_OLLAMA_MODEL` (default `qwen3-vl:8b-instruct`, also `gemma4:e4b`).
-An Ollama that already runs on the host can be used instead by setting
-`VS_OLLAMA_URL=http://localhost:11434`; do not run both, each loads its own copy into VRAM.
-A VLM call takes about 1 s (10–20 s for the first one, which loads the model), the tracker
-carries the control loop in between.
+The detector speaks the OpenAI-compatible chat API, so Ollama can be swapped for vLLM,
+llama.cpp server or SGLang by changing `VS_VLM_URL`. The model is chosen with `VS_VLM_MODEL`
+(default `qwen3-vl:8b-instruct`, also `gemma4:e4b`). Already downloaded models (e.g. from an
+Ollama on Windows) can be copied into the volume instead of downloading again:
+`scripts/import_ollama_models.sh /mnt/c/Users/<you>/models/ollama`. Mounting that folder directly
+(`VS_OLLAMA_STORE`) also works but loads about twice as slowly through `/mnt/c` (measured ~70 s
+vs. ~40 s for an 8B model, 3 s once cached). Do not run a second Ollama on the host at the same
+time, each loads its own copy into VRAM.
+A VLM call takes 1–2 s (10–20 s for the first one, which loads the model), the tracker carries
+the control loop in between.
 
 ## 4. Structure
 
 ```
 docker/                Dockerfile (stages sim, fm), entrypoint
-compose*.yaml          base service + per-machine overrides (WSL, Linux GPU, Linux GUI)
+compose*.yaml          base service + per-machine overrides (WSL, Linux GPU, Linux GUI), Ollama
 docs/PLAN.md           team plan, FM assignment, milestones
+docs/ROBOT.md          joints, frames, controllers, commands, safety rules
+scripts/               helper scripts (import existing Ollama models)
 ros2_ws/src/
   gofa_description/    GoFa URDF macro + meshes
   vs_bringup/          cell xacro, Gazebo world, controllers, launch files, parameters

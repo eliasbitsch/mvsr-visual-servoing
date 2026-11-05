@@ -1,7 +1,8 @@
 """Closed-loop IBVS: image features -> camera twist -> hand-eye -> joint velocities.
 
 Safety: the arm stops (zero joint velocities) whenever features are missing, invalid or older
-than feature_timeout. The ground-truth topics /gt/* are never used here.
+than feature_timeout, and whenever SafetyMonitor predicts self-collision or leaving the
+workspace. The ground-truth topics /gt/* are never used here.
 """
 import numpy as np
 import pinocchio as pin
@@ -21,6 +22,7 @@ from vs_interfaces.msg import ObjectFeatures
 from vs_control import ibvs
 from vs_control.kinematics import (adjoint, clamp_norm, damped_pinv_solve,
                                    limit_joint_velocities, transform_to_rp)
+from vs_control.safety import SafetyMonitor
 
 PARAMS = {
     'camera_info_topic': '/camera/camera/color/camera_info',
@@ -37,6 +39,12 @@ PARAMS = {
     'max_linear_speed': 0.10, 'max_angular_speed': 0.5, 'joint_speed_scale': 0.5,
     'joint_limit_margin': 0.1, 'dls_damping': 0.05, 'feature_timeout': 0.5,
     'converged_threshold': 0.01, 'converged_hold_time': 1.0, 'auto_start': False,
+    # Safety guard (see safety.py)
+    'collision_margin': 0.01, 'safety_lookahead': 0.2, 'min_height': 0.03,
+    'height_frames': ['tool0', 'camera_link', 'robotiq_85_left_finger_tip_link',
+                      'robotiq_85_right_finger_tip_link'],
+    # tool0 position limits in base_link: x_min, y_min, z_min, x_max, y_max, z_max
+    'workspace': [0.15, -0.7, 0.0, 1.0, 0.7, 1.2],
 }
 
 
@@ -55,6 +63,7 @@ class IbvsNode(Node):
         self.depth = None
         self.q = None
         self.model = None
+        self.safety = None
         self.active = False
         self.converged_since = None
 
@@ -97,7 +106,13 @@ class IbvsNode(Node):
         self.model = pin.buildReducedModel(full, lock, pin.neutral(full))
         self.data = self.model.createData()
         self.ee_id = self.model.getFrameId(self.p['ee_frame'])
-        self.get_logger().info(f'kinematic model ready, {self.model.nq} joints')
+        p = self.p
+        self.safety = SafetyMonitor(msg.data, p['arm_joints'], margin=p['collision_margin'],
+                                    lookahead=p['safety_lookahead'], min_height=p['min_height'],
+                                    height_frames=p['height_frames'],
+                                    workspace_frame=p['ee_frame'], workspace=p['workspace'])
+        self.get_logger().info(f'kinematic model ready, {self.model.nq} joints, '
+                               f'{len(self.safety.geom.collisionPairs)} collision pairs checked')
 
     def on_info(self, msg):
         self.K = (msg.k[0], msg.k[4], msg.k[2], msg.k[5])
@@ -227,6 +242,9 @@ class IbvsNode(Node):
                                     self.model.upperPositionLimit,
                                     p['joint_speed_scale'] * self.model.velocityLimit,
                                     p['joint_limit_margin'])
+        reason = self.safety.check(self.q, qd)
+        if reason:
+            return self.halt(reason)
         self.publish_joint_velocities(qd)
         self.publish_diagnostics(f.header, v_cam, e)
 

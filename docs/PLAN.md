@@ -65,7 +65,7 @@ same `Detector` interface, so the node, the tracker and the controller never cha
 | **Philip** | RTX 3050, ~4 GB | **YOLO-World** (+ YOLOE if time) | Real-time open-vocabulary detector that fits 4 GB; baseline for "fast but less precise" |
 | **Jiayi** | to check | **OWLv2** + **Florence-2** | Two different families (CLIP-style vs. generative VLM grounding), good material for the comparison chapter |
 
-VLMs as detector (`detector:=ollama_vlm`, served by the compose service `ollama`) show the
+VLMs as detector (`detector:=vlm`, served by the compose service `ollama`) show the
 latency extreme: the tracker has to carry the loop. First test on a synthetic image (3080 Ti,
 after warm-up): Qwen3-VL-8B 0.8 s, Gemma 4 E4B 0.6 s, Qwen3.5-9B 1.1 s per call, boxes within a
 few pixels; the first call loads the model (11–17 s). Candidates that fit 16 GB VRAM:
@@ -76,8 +76,12 @@ few pixels; the first call loads the model (11–17 s). Candidates that fit 16 G
 | Qwen3-VL-8B (or 4B) | 8B / 4B dense | boxes in 0–1000 normalised coordinates |
 | Qwen3.8-27B | 27B dense, vision | 4-bit only, ~15–16 GB, so it cannot share the GPU with the rest of the pipeline |
 
+| GLM-4.6V-Flash | 9B, open weights (GGUF) | boxes as `<\|begin_of_box\|>[x1,y1,x2,y2]<\|end_of_box\|>`, parser done; still to test whether Ollama runs its vision part |
+
 Not local: Gemma 4 26B-A4B (~18 GB at 4-bit), Qwen3.8-2.4T, GLM-4.5V (106B MoE);
 GLM-5V-Turbo has grounding but its weight status is unclear.
+Ollama keeps one model in VRAM at a time (`OLLAMA_MAX_LOADED_MODELS=1`), so compare VLMs one
+after the other; Qwen3-VL-8B needs 5.4 GiB VRAM.
 
 ### Common comparison protocol (required by the spec)
 
@@ -103,6 +107,17 @@ So that the numbers are comparable, every FM owner reports on the **same recorde
   trajectory in the image), robustness tests (occlusion, lighting, distance).
 - **Everyone:** README, slides, plagiarism-safe source list (every borrowed model, mesh and
   snippet cited).
+
+Safety rules are enforced in `vs_control` (self-collision, workspace, floor clearance, limits,
+safe stop), see [ROBOT.md](ROBOT.md). Philip owns them together with the controller.
+
+### Optional, only once servoing and evaluation are done
+
+An LLM agent on top ("pick the red box and put it next to the mug"): a language model plans
+with a small set of skills (`servo_to(prompt)`, `open_gripper`, `close_gripper`,
+`move_to_named_pose`), each skill calls the existing nodes, and the safety layer in
+`vs_control` still has the last word. Beyond the assignment; worth it only as an extra in the
+demo.
 
 ## Milestones
 

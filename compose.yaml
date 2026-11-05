@@ -18,8 +18,9 @@ services:
       # Without these, ros_gz_sim under WSL mirrored networking never finds the world (AROBL E-024)
       - GZ_PARTITION=mvsr_vs
       - GZ_IP=127.0.0.1
-      - VS_OLLAMA_URL=${VS_OLLAMA_URL:-http://localhost:11435}
-      - VS_OLLAMA_MODEL=${VS_OLLAMA_MODEL:-qwen3-vl:8b-instruct}
+      # OpenAI-compatible VLM endpoint for detector:=vlm (Ollama, vLLM, llama.cpp, SGLang, ...)
+      - VS_VLM_URL=${VS_VLM_URL:-http://localhost:11435/v1}
+      - VS_VLM_MODEL=${VS_VLM_MODEL:-qwen3-vl:8b-instruct}
     volumes:
       - ./ros2_ws/src:/ros2_ws/src
       - ws-build:/ros2_ws/build
@@ -28,8 +29,9 @@ services:
       - models:/models
       - ./data:/data
 
-  # VLM server for the ollama_vlm detector. Port 11435 so it does not clash with an Ollama
-  # that may already run on the host (11434).
+  # VLM server for detector:=vlm. Port 11435 so it does not clash with an Ollama that may
+  # already run on the host (11434). VS_OLLAMA_STORE can point to an existing model folder
+  # (e.g. /mnt/c/Users/<you>/models/ollama) to reuse downloaded models.
   ollama:
     image: ollama/ollama:0.40.14
     profiles: [vlm]
@@ -38,8 +40,10 @@ services:
     environment:
       - OLLAMA_HOST=127.0.0.1:11435
       - OLLAMA_KEEP_ALIVE=30m
+      # One model in VRAM at a time; a second one would be pushed to the CPU (16 GB laptop GPU)
+      - OLLAMA_MAX_LOADED_MODELS=1
     volumes:
-      - ollama:/root/.ollama
+      - ${VS_OLLAMA_STORE:-ollama}:/root/.ollama/models
     deploy:
       resources:
         reservations:

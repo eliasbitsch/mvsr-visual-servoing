@@ -5,7 +5,7 @@ Localises the target described by a text prompt and publishes image features on 
 
 | Part | Parameter | Available | Runs |
 |---|---|---|---|
-| Detector (foundation model) | `detector` | `grounding_dino`, `owlv2`, `yolo_world`, `ollama_vlm` | worker thread, every `detector_period` s |
+| Detector (foundation model) | `detector` | `grounding_dino`, `owlv2`, `yolo_world`, `vlm` | worker thread, every `detector_period` s |
 | Tracker | `tracker` | `csrt`, `kcf`, `none` | every camera frame |
 | Mask refiner | `refiner` | `none`, `sam2` | every camera frame, on the tracked box |
 
