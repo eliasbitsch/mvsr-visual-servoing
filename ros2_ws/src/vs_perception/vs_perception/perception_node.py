@@ -1,8 +1,9 @@
 """Target localisation: slow foundation model in a worker thread, fast tracker on every frame.
 
 The detector result belongs to the frame it was computed on, which is already old when it
-arrives. The tracker is therefore re-initialised on that buffered frame and replayed through
-all frames since, so the latency of the model does not show up as a jump in the features.
+arrives. The worker therefore initialises a fresh tracker on that buffered frame and replays it
+through all frames since; only then is it swapped in. The running tracker keeps publishing in
+the meantime, so neither the model latency nor the replay shows up as a gap or jump.
 """
 import queue
 import threading
@@ -50,7 +51,9 @@ class PerceptionNode(Node):
         self.detector.load()
         self.refiner = REFINERS.create(p['refiner'], device=p['device'])
         self.refiner.load()
-        self.tracker = TRACKERS.create(p['tracker'])
+        self.tracker_name = p['tracker']
+        self.tracker = TRACKERS.create(self.tracker_name)
+        self.tracking = not isinstance(self.tracker, NoTracker)
         self.get_logger().info(f'models ready after {time.monotonic() - t0:.1f} s')
 
         self.frames = deque(maxlen=p['frame_buffer_size'])
@@ -102,60 +105,71 @@ class PerceptionNode(Node):
             except Exception as exc:  # keep the node alive, the tracker may still run
                 self.get_logger().error(f'detector failed: {exc}')
                 dets = []
-            self.results.put((seq, stamp, prompt, dets, time.monotonic() - t0))
+            latency = time.monotonic() - t0
+            best = max(dets, key=lambda d: d.score) if dets else None
+            replay = self.replay_tracker(seq, best.box) if best else None
+            self.results.put((stamp, prompt, best, latency, replay))
 
-    def apply_detections(self, current_seq):
+    def buffered_since(self, seq):
+        with self.latest_lock:
+            return [f for f in self.frames if f[0] >= seq]
+
+    def replay_tracker(self, det_seq, box):
+        """Fresh tracker started on the detection frame and run up to the newest frame.
+        Returns (tracker, box or None if lost, seq of the last frame it saw)."""
+        tracker = TRACKERS.create(self.tracker_name)
+        buffered = self.buffered_since(det_seq)
+        if not buffered or buffered[0][0] != det_seq:
+            # Detection frame already dropped from the buffer: accept the small error
+            buffered = self.buffered_since(self.seq)
+        tracker.init(buffered[0][2], box)
+        last = buffered[0][0]
+        if not self.tracking:
+            return tracker, box, last
+        for seq, _, img in buffered[1:]:
+            box = tracker.update(img)
+            if box is None:
+                return tracker, None, seq
+            last = seq
+        return tracker, box, last
+
+    def apply_detections(self):
         """Returns True if a fresh detection was applied in this call."""
         fresh = False
         while not self.results.empty():
-            seq, stamp, prompt, dets, latency = self.results.get_nowait()
+            stamp, prompt, best, latency, replay = self.results.get_nowait()
             if prompt != self.prompt:
                 continue
             self.latency = latency
-            if not dets:
+            if best is None:
                 self.missed += 1
                 if self.missed >= self.max_missed:
                     self.track_box = None
                 continue
             self.missed = 0
-            best = max(dets, key=lambda d: d.score)
             self.score = best.score
             self.det_stamp = stamp
             self.det_mask = best.mask
-            self.reinit_tracker(seq, best.box, current_seq)
+            self.tracker, self.track_box, self.track_seq = replay
             fresh = True
         return fresh
 
-    def reinit_tracker(self, det_seq, box, current_seq):
-        buffered = [f for f in self.frames if f[0] >= det_seq]
-        if not buffered or buffered[0][0] != det_seq:
-            # Detection frame already dropped from the buffer: accept the small error
-            buffered = [self.frames[-1]]
-        self.tracker.init(buffered[0][2], box)
-        self.track_box, self.track_seq = box, buffered[0][0]
-        if isinstance(self.tracker, NoTracker):
-            return
-        for seq, _, img in buffered[1:]:
-            if seq > current_seq:
-                break
-            box = self.tracker.update(img)
-            if box is None:
-                self.track_box = None
-                return
-            self.track_box, self.track_seq = box, seq
-
     def on_image(self, msg):
         img = to_rgb(msg)
-        self.seq += 1
-        self.frames.append((self.seq, msg.header.stamp, img))
         with self.latest_lock:
+            self.seq += 1
+            self.frames.append((self.seq, msg.header.stamp, img))
             self.latest = (self.seq, msg.header.stamp, img)
 
-        fresh = self.apply_detections(self.seq)
-        tracking = not isinstance(self.tracker, NoTracker)
+        fresh = self.apply_detections()
+        tracking = self.tracking
+        # Catch up the frames that arrived while the worker replayed (usually one or two)
         if self.track_box is not None and tracking and self.track_seq < self.seq:
-            self.track_box = self.tracker.update(img)
-            self.track_seq = self.seq
+            for seq, _, frame in self.buffered_since(self.track_seq + 1):
+                self.track_box = self.tracker.update(frame)
+                self.track_seq = seq
+                if self.track_box is None:
+                    break
 
         out = ObjectFeatures(header=msg.header, prompt=self.prompt,
                              source='detector' if fresh else 'tracker')
