@@ -1,6 +1,11 @@
 # Stages:
 #   sim : ROS 2 Jazzy, Gazebo Harmonic, ros2_control, MoveIt 2, RealSense, Robotiq, pinocchio
 #   fm  : sim + CUDA PyTorch and foundation model libraries (default target)
+#
+# Two Python environments, both Python 3.12:
+#   system  /usr/bin/python3     numpy 1.26 (apt). ROS, pinocchio -> vs_control
+#   venv    /opt/vs-venv         numpy 2, OpenCV 4.12, PyTorch -> vs_perception
+# OpenCV 4.12 (required by the spec) needs numpy 2, and the apt pinocchio segfaults with numpy 2.
 FROM osrf/ros:jazzy-desktop-full AS sim
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -24,17 +29,17 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
       ros-jazzy-tf-transformations \
       ros-jazzy-rqt-image-view \
       ros-jazzy-plotjuggler-ros \
-      python3-pip python3-colcon-common-extensions python3-rosdep \
+      python3-pip python3-venv python3-colcon-common-extensions python3-rosdep \
       mesa-utils git wget nano \
     && rm -rf /var/lib/apt/lists/*
 
-# PEP 668: inside the container we install into the system interpreter so ROS nodes see the
-# packages. numpy<2 keeps the apt-built ROS Python extensions working.
-ENV PIP_BREAK_SYSTEM_PACKAGES=1 \
-    PIP_NO_CACHE_DIR=1
+ENV PIP_NO_CACHE_DIR=1 \
+    VS_PYTHON=/opt/vs-venv/bin/python
 COPY docker/constraints.txt /opt/constraints.txt
-# The spec requires OpenCV 4.12; the apt OpenCV (4.6) stays for the C++ ROS packages.
-RUN pip install -c /opt/constraints.txt opencv-contrib-python-headless==4.12.0.88 scipy matplotlib pandas
+# --system-site-packages: rclpy and the generated messages come from /opt/ros
+RUN python3 -m venv --system-site-packages /opt/vs-venv \
+    && /opt/vs-venv/bin/pip install -c /opt/constraints.txt \
+         numpy opencv-contrib-python-headless scipy matplotlib pandas
 
 ENV ROS_WS=/ros2_ws
 WORKDIR ${ROS_WS}
@@ -49,14 +54,16 @@ CMD ["bash"]
 FROM sim AS fm
 
 # CUDA 12.4 wheels bundle their own CUDA runtime, only the host driver is needed.
-RUN pip install -c /opt/constraints.txt \
+RUN /opt/vs-venv/bin/pip install -c /opt/constraints.txt \
       torch torchvision --index-url https://download.pytorch.org/whl/cu124
-RUN pip install -c /opt/constraints.txt \
+# ultralytics pulls opencv-python, which would shadow the contrib build (CSRT/KCF trackers)
+RUN /opt/vs-venv/bin/pip install -c /opt/constraints.txt \
       "transformers>=4.51" accelerate timm einops \
       ultralytics \
       "git+https://github.com/ultralytics/CLIP.git" \
-    && { pip uninstall -y opencv-python opencv-python-headless || true; } \
-    && pip install --force-reinstall --no-deps opencv-contrib-python-headless==4.12.0.88
+    && { /opt/vs-venv/bin/pip uninstall -y opencv-python opencv-python-headless || true; } \
+    && /opt/vs-venv/bin/pip install --force-reinstall --no-deps -c /opt/constraints.txt \
+         opencv-contrib-python-headless
 
 # Model weights are cached here; compose mounts a named volume so they survive rebuilds.
 ENV HF_HOME=/models/huggingface \

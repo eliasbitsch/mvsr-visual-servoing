@@ -1,6 +1,6 @@
 """Run one detector on image files, without ROS. For the FM comparison study.
 
-  ros2 run vs_perception detect_image --detector owlv2 --prompt "red box" /data/frames/*.png \
+  ros2 run --prefix "$VS_PYTHON" vs_perception detect_image --detector owlv2 --prompt "red box" /data/frames/*.png \
       --out /data/results/owlv2_red_box
 Writes annotated images and a detections.csv (file, prompt, rank, box, score, latency_ms).
 """

@@ -36,8 +36,11 @@ Extra options (model id, weights) arrive as keyword arguments in `self.options`.
 
 ## Testing a model on images (no simulation needed)
 
+The perception code runs in the venv interpreter `$VS_PYTHON` (numpy 2, OpenCV 4.12, PyTorch),
+so `ros2 run` needs `--prefix`; `servo.launch.py` does this automatically.
+
 ```bash
-ros2 run vs_perception detect_image --detector owlv2 \
+ros2 run --prefix "$VS_PYTHON" vs_perception detect_image --detector owlv2 \
     --prompt "red box" --prompt "a small red cube" /data/frames/*.png --out /data/results/owlv2
 ```
 

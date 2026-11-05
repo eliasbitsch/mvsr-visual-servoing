@@ -32,7 +32,9 @@ def generate_launch_description():
         IncludeLaunchDescription(os.path.join(pkg, 'launch', 'sim.launch.py'),
                                  launch_arguments={'gui': arg('gui')}.items(),
                                  condition=IfCondition(arg('sim'))),
+        # Perception needs the venv interpreter (numpy 2, OpenCV 4.12, PyTorch), see Dockerfile
         Node(package='vs_perception', executable='perception_node', output='screen',
+             prefix=os.environ.get('VS_PYTHON', ''),
              parameters=[params, {'detector': arg('detector'), 'prompt': arg('prompt'),
                                   'tracker': arg('tracker'), 'refiner': arg('refiner'),
                                   'detector_period': arg('detector_period')}]),
