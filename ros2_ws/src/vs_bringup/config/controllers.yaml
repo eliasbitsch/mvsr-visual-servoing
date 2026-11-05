@@ -1,0 +1,30 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 250
+    use_sim_time: true
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    # Moves the arm to start configurations (evaluation, reset)
+    arm_trajectory_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+    # Visual servoing output; started inactive, vs_control switches to it
+    arm_velocity_controller:
+      type: velocity_controllers/JointGroupVelocityController
+    gripper_controller:
+      type: position_controllers/JointGroupPositionController
+
+arm_trajectory_controller:
+  ros__parameters:
+    joints: [joint_1, joint_2, joint_3, joint_4, joint_5, joint_6]
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    allow_nonzero_velocity_at_trajectory_end: false
+
+arm_velocity_controller:
+  ros__parameters:
+    joints: [joint_1, joint_2, joint_3, joint_4, joint_5, joint_6]
+
+gripper_controller:
+  ros__parameters:
+    joints: [robotiq_85_left_knuckle_joint]

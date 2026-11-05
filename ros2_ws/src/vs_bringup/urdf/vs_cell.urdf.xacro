@@ -1,0 +1,80 @@
+<?xml version="1.0"?>
+<robot name="vs_cell" xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:arg name="use_gripper" default="true"/>
+  <xacro:arg name="controllers_file" default="$(find vs_bringup)/config/controllers.yaml"/>
+
+  <xacro:include filename="$(find gofa_description)/urdf/gofa_macro.xacro"/>
+  <xacro:include filename="$(find robotiq_description)/urdf/robotiq_2f_85_macro.urdf.xacro"/>
+  <xacro:include filename="$(find realsense2_description)/urdf/_d435.urdf.xacro"/>
+  <xacro:include filename="$(find vs_bringup)/urdf/d435_gazebo.xacro"/>
+
+  <!-- Start pose: forearm horizontal, wrist bent so the camera looks straight down -->
+  <xacro:property name="q0" value="${[0.0, 0.0, 0.0, 0.0, 1.5708, 0.0]}"/>
+
+  <link name="world"/>
+  <joint name="world-base_link" type="fixed">
+    <parent link="world"/>
+    <child link="base_link"/>
+  </joint>
+
+  <xacro:gofa/>
+
+  <xacro:if value="$(arg use_gripper)">
+    <xacro:robotiq_gripper name="RobotiqGripper" prefix="" parent="tool0" include_ros2_control="false">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:robotiq_gripper>
+  </xacro:if>
+
+  <!-- Eye-in-hand camera beside the gripper. camera_link x axis = viewing direction = tool0 z.
+       This transform is the hand-eye calibration; vs_control reads it from TF, never hard-codes it. -->
+  <xacro:sensor_d435 parent="tool0" name="camera" use_nominal_extrinsics="true">
+    <origin xyz="0.0 -0.075 0.03" rpy="0 ${-pi/2} 0"/>
+  </xacro:sensor_d435>
+  <xacro:d435_gazebo frame="camera_color_frame" optical_frame="camera_color_optical_frame"/>
+
+  <ros2_control name="GazeboSimSystem" type="system">
+    <hardware>
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+    </hardware>
+    <xacro:macro name="arm_joint" params="n">
+      <joint name="joint_${n}">
+        <command_interface name="position"/>
+        <command_interface name="velocity"/>
+        <state_interface name="position">
+          <param name="initial_value">${q0[n-1]}</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+    </xacro:macro>
+    <xacro:arm_joint n="1"/>
+    <xacro:arm_joint n="2"/>
+    <xacro:arm_joint n="3"/>
+    <xacro:arm_joint n="4"/>
+    <xacro:arm_joint n="5"/>
+    <xacro:arm_joint n="6"/>
+    <xacro:if value="$(arg use_gripper)">
+      <joint name="robotiq_85_left_knuckle_joint">
+        <command_interface name="position"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+      <!-- Mimic joints: state only, gz_ros2_control drives them from the <mimic> tags -->
+      <xacro:macro name="mimic_joint" params="name">
+        <joint name="${name}">
+          <state_interface name="position"/>
+        </joint>
+      </xacro:macro>
+      <xacro:mimic_joint name="robotiq_85_right_knuckle_joint"/>
+      <xacro:mimic_joint name="robotiq_85_left_inner_knuckle_joint"/>
+      <xacro:mimic_joint name="robotiq_85_right_inner_knuckle_joint"/>
+      <xacro:mimic_joint name="robotiq_85_left_finger_tip_joint"/>
+      <xacro:mimic_joint name="robotiq_85_right_finger_tip_joint"/>
+    </xacro:if>
+  </ros2_control>
+
+  <gazebo>
+    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <parameters>$(arg controllers_file)</parameters>
+    </plugin>
+  </gazebo>
+</robot>

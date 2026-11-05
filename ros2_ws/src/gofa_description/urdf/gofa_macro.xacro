@@ -1,0 +1,88 @@
+<?xml version="1.0"?>
+<!--
+  ABB GoFa CRB 15000-5/0.95. Kinematics and meshes from ROS-Industrial abb_crb15000_support
+  (Apache 2.0, see LICENSE). Inertials and effort limits are rough estimates added for Gazebo,
+  the original has none.
+-->
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:macro name="gofa_link" params="name mesh mass ixx iyy izz cx:=0 cy:=0 cz:=0 rgba">
+    <link name="${name}">
+      <visual>
+        <geometry>
+          <mesh filename="package://gofa_description/meshes/visual/${mesh}.stl"/>
+        </geometry>
+        <material name="${name}_mat"><color rgba="${rgba}"/></material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://gofa_description/meshes/collision/${mesh}.stl"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <origin xyz="${cx} ${cy} ${cz}" rpy="0 0 0"/>
+        <mass value="${mass}"/>
+        <inertia ixx="${ixx}" ixy="0" ixz="0" iyy="${iyy}" iyz="0" izz="${izz}"/>
+      </inertial>
+    </link>
+  </xacro:macro>
+
+  <xacro:macro name="gofa" params="prefix:=''">
+    <xacro:property name="dark" value="0.25 0.25 0.25 1"/>
+    <xacro:property name="white" value="0.92 0.92 0.90 1"/>
+
+    <xacro:gofa_link name="${prefix}base_link" mesh="base_link" mass="4.0"
+                     ixx="0.02" iyy="0.02" izz="0.02" cz="0.08" rgba="${dark}"/>
+    <xacro:gofa_link name="${prefix}link_1" mesh="link_1" mass="5.0"
+                     ixx="0.03" iyy="0.03" izz="0.02" cz="0.1" rgba="${dark}"/>
+    <xacro:gofa_link name="${prefix}link_2" mesh="link_2" mass="6.0"
+                     ixx="0.12" iyy="0.12" izz="0.02" cz="0.22" rgba="${dark}"/>
+    <xacro:gofa_link name="${prefix}link_3" mesh="link_3" mass="3.0"
+                     ixx="0.01" iyy="0.01" izz="0.01" cz="0.05" rgba="${dark}"/>
+    <xacro:gofa_link name="${prefix}link_4" mesh="link_4" mass="3.0"
+                     ixx="0.01" iyy="0.06" izz="0.06" cx="0.23" rgba="${white}"/>
+    <xacro:gofa_link name="${prefix}link_5" mesh="link_5" mass="1.5"
+                     ixx="0.003" iyy="0.003" izz="0.003" cx="0.05" rgba="${white}"/>
+    <xacro:gofa_link name="${prefix}link_6" mesh="link_6" mass="0.5"
+                     ixx="0.0005" iyy="0.0005" izz="0.0005" rgba="${white}"/>
+
+    <xacro:macro name="gofa_joint" params="n parent child xyz axis lower upper vel effort">
+      <joint name="${prefix}joint_${n}" type="revolute">
+        <origin xyz="${xyz}" rpy="0 0 0"/>
+        <axis xyz="${axis}"/>
+        <parent link="${prefix}${parent}"/>
+        <child link="${prefix}${child}"/>
+        <limit lower="${radians(lower)}" upper="${radians(upper)}"
+               velocity="${radians(vel)}" effort="${effort}"/>
+        <dynamics damping="0.5" friction="0.0"/>
+      </joint>
+    </xacro:macro>
+
+    <xacro:gofa_joint n="1" parent="base_link" child="link_1" xyz="0 0 0.265" axis="0 0 1"
+                      lower="-180" upper="180" vel="125" effort="150"/>
+    <xacro:gofa_joint n="2" parent="link_1" child="link_2" xyz="0 0 0" axis="0 1 0"
+                      lower="-180" upper="180" vel="125" effort="150"/>
+    <xacro:gofa_joint n="3" parent="link_2" child="link_3" xyz="0 0 0.444" axis="0 1 0"
+                      lower="-225" upper="85" vel="140" effort="80"/>
+    <xacro:gofa_joint n="4" parent="link_3" child="link_4" xyz="0 0 0.110" axis="1 0 0"
+                      lower="-180" upper="180" vel="200" effort="30"/>
+    <xacro:gofa_joint n="5" parent="link_4" child="link_5" xyz="0.470 0 0" axis="0 1 0"
+                      lower="-180" upper="180" vel="200" effort="30"/>
+    <xacro:gofa_joint n="6" parent="link_5" child="link_6" xyz="0.101 0 0.080" axis="1 0 0"
+                      lower="-180" upper="180" vel="200" effort="15"/>
+
+    <link name="${prefix}flange"/>
+    <joint name="${prefix}joint_6-flange" type="fixed">
+      <parent link="${prefix}link_6"/>
+      <child link="${prefix}flange"/>
+    </joint>
+
+    <!-- ROS-Industrial convention: tool0 z axis points out of the flange -->
+    <link name="${prefix}tool0"/>
+    <joint name="${prefix}flange-tool0" type="fixed">
+      <origin xyz="0 0 0" rpy="0 ${radians(90)} 0"/>
+      <parent link="${prefix}flange"/>
+      <child link="${prefix}tool0"/>
+    </joint>
+  </xacro:macro>
+</robot>

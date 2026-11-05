@@ -1,0 +1,116 @@
+<?xml version="1.0"?>
+<sdf version="1.10">
+  <world name="vs_world">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <scene>
+      <ambient>0.5 0.5 0.5 1</ambient>
+      <background>0.8 0.85 0.9 1</background>
+      <shadows>true</shadows>
+    </scene>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.4 0.2 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+          <material>
+            <ambient>0.55 0.55 0.52 1</ambient>
+            <diffuse>0.55 0.55 0.52 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Targets. Each publishes its ground-truth pose for the evaluation (bridged to /gt/*). -->
+    <model name="red_box">
+      <pose>0.60 0.0 0.03 0 0 0.3</pose>
+      <link name="link">
+        <inertial><mass>0.2</mass>
+          <inertia><ixx>1.2e-4</ixx><iyy>1.2e-4</iyy><izz>1.2e-4</izz></inertia>
+        </inertial>
+        <collision name="collision"><geometry><box><size>0.06 0.06 0.06</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>0.06 0.06 0.06</size></box></geometry>
+          <material><ambient>0.8 0.05 0.05 1</ambient><diffuse>0.8 0.05 0.05 1</diffuse></material>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>10</update_frequency>
+      </plugin>
+    </model>
+
+    <!-- Lying cylinder: elongated, so its image orientation is well defined (yaw control) -->
+    <model name="blue_cylinder">
+      <pose>0.70 0.22 0.025 1.5708 0 0.6</pose>
+      <link name="link">
+        <inertial><mass>0.15</mass>
+          <inertia><ixx>2.3e-4</ixx><iyy>2.3e-4</iyy><izz>4.7e-5</izz></inertia>
+        </inertial>
+        <collision name="collision"><geometry><cylinder><radius>0.025</radius><length>0.14</length></cylinder></geometry></collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.025</radius><length>0.14</length></cylinder></geometry>
+          <material><ambient>0.05 0.15 0.8 1</ambient><diffuse>0.05 0.15 0.8 1</diffuse></material>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>10</update_frequency>
+      </plugin>
+    </model>
+
+    <model name="yellow_mug">
+      <pose>0.55 -0.25 0.0 0 0 -0.8</pose>
+      <link name="link">
+        <inertial><pose>0 0 0.05 0 0 0</pose><mass>0.3</mass>
+          <inertia><ixx>3e-4</ixx><iyy>3e-4</iyy><izz>2e-4</izz></inertia>
+        </inertial>
+        <collision name="body_collision">
+          <pose>0 0 0.05 0 0 0</pose>
+          <geometry><cylinder><radius>0.04</radius><length>0.1</length></cylinder></geometry>
+        </collision>
+        <visual name="body">
+          <pose>0 0 0.05 0 0 0</pose>
+          <geometry><cylinder><radius>0.04</radius><length>0.1</length></cylinder></geometry>
+          <material><ambient>0.9 0.75 0.05 1</ambient><diffuse>0.9 0.75 0.05 1</diffuse></material>
+        </visual>
+        <visual name="handle">
+          <pose>0.05 0 0.05 0 0 0</pose>
+          <geometry><box><size>0.025 0.012 0.06</size></box></geometry>
+          <material><ambient>0.9 0.75 0.05 1</ambient><diffuse>0.9 0.75 0.05 1</diffuse></material>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_model_pose>true</publish_model_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>10</update_frequency>
+      </plugin>
+    </model>
+  </world>
+</sdf>

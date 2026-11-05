@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>gofa_description</name>
+  <version>0.1.0</version>
+  <description>ABB GoFa CRB 15000-5/0.95 description with inertials for Gazebo.</description>
+  <maintainer email="eliasbitsch1@gmail.com">Elias Bitsch</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>xacro</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

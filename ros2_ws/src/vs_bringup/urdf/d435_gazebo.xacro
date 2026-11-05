@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<!-- Simulated D435 colour + aligned depth. realsense2_description only has geometry, no sensor. -->
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:macro name="d435_gazebo" params="frame optical_frame width:=640 height:=480 rate:=30">
+    <gazebo reference="${frame}">
+      <sensor name="d435" type="rgbd_camera">
+        <always_on>true</always_on>
+        <update_rate>${rate}</update_rate>
+        <visualize>false</visualize>
+        <topic>d435</topic>
+        <gz_frame_id>${optical_frame}</gz_frame_id>
+        <camera>
+          <!-- D435 colour HFOV 69 deg -->
+          <horizontal_fov>1.2043</horizontal_fov>
+          <image>
+            <width>${width}</width>
+            <height>${height}</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>10.0</far>
+          </clip>
+          <depth_camera>
+            <clip>
+              <near>0.1</near>
+              <far>10.0</far>
+            </clip>
+          </depth_camera>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.005</stddev>
+          </noise>
+        </camera>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+</robot>
