@@ -34,6 +34,8 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     && rm -rf /var/lib/apt/lists/*
 
 ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=10 \
     VS_PYTHON=/opt/vs-venv/bin/python
 COPY docker/constraints.txt /opt/constraints.txt
 # --system-site-packages: rclpy and the generated messages come from /opt/ros
