@@ -6,6 +6,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile
       target: ${IMAGE_TARGET:-fm}
+      # The default bridge was slower and dropped long downloads under WSL
+      network: host
     image: mvsr-vs:${IMAGE_TARGET:-fm}
     container_name: mvsr-vs
     stdin_open: true

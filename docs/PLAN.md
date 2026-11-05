@@ -76,7 +76,7 @@ few pixels; the first call loads the model (11–17 s). Candidates that fit 16 G
 | Qwen3-VL-8B (or 4B) | 8B / 4B dense | boxes in 0–1000 normalised coordinates |
 | Qwen3.8-27B | 27B dense, vision | 4-bit only, ~15–16 GB, so it cannot share the GPU with the rest of the pipeline |
 
-| GLM-4.6V-Flash | 9B, open weights (GGUF) | boxes as `<\|begin_of_box\|>[x1,y1,x2,y2]<\|end_of_box\|>`, parser done; still to test whether Ollama runs its vision part |
+| GLM-4.6V-Flash | 9B, open weights (GGUF Q4_K_M, 8 GB) | tested in Ollama 0.40.14: boxes correct (~2 px) in 2 of 3 identical calls, the third produced only `!!!!…` until the token limit; 27–34 s per answer (reasons first, 0.9B vision encoder). Not usable in the loop for now; to retry with Q8_0 or vLLM + AWQ |
 
 Not local: Gemma 4 26B-A4B (~18 GB at 4-bit), Qwen3.8-2.4T, GLM-4.5V (106B MoE);
 GLM-5V-Turbo has grounding but its weight status is unclear.

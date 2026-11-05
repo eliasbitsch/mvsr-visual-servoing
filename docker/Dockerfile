@@ -33,13 +33,15 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
       mesa-utils git wget nano \
     && rm -rf /var/lib/apt/lists/*
 
-ENV PIP_NO_CACHE_DIR=1 \
-    PIP_DEFAULT_TIMEOUT=120 \
+# The pip cache lives in a BuildKit cache mount (not in the image): after a dropped download a
+# rebuild only fetches what is missing, which matters for the 2.5 GB of PyTorch wheels.
+ENV PIP_DEFAULT_TIMEOUT=300 \
     PIP_RETRIES=10 \
     VS_PYTHON=/opt/vs-venv/bin/python
 COPY docker/constraints.txt /opt/constraints.txt
 # --system-site-packages: rclpy and the generated messages come from /opt/ros
-RUN python3 -m venv --system-site-packages /opt/vs-venv \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python3 -m venv --system-site-packages /opt/vs-venv \
     && /opt/vs-venv/bin/pip install -c /opt/constraints.txt \
          numpy opencv-contrib-python-headless scipy matplotlib pandas
 
@@ -56,10 +58,12 @@ CMD ["bash"]
 FROM sim AS fm
 
 # CUDA 12.4 wheels bundle their own CUDA runtime, only the host driver is needed.
-RUN /opt/vs-venv/bin/pip install -c /opt/constraints.txt \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /opt/vs-venv/bin/pip install -c /opt/constraints.txt \
       torch torchvision --index-url https://download.pytorch.org/whl/cu124
 # ultralytics pulls opencv-python, which would shadow the contrib build (CSRT/KCF trackers)
-RUN /opt/vs-venv/bin/pip install -c /opt/constraints.txt \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /opt/vs-venv/bin/pip install -c /opt/constraints.txt \
       "transformers>=4.51" accelerate timm einops \
       ultralytics \
       "git+https://github.com/ultralytics/CLIP.git" \
