@@ -87,10 +87,18 @@ after the other; Qwen3-VL-8B needs 5.4 GiB VRAM.
 
 So that the numbers are comparable, every FM owner reports on the **same recorded image set**:
 
-1. A clutter world `vs_world_clutter.sdf` with realistic textured objects (YCB / Google Scanned
-   Objects on Gazebo Fuel, NVIDIA SimReady Central where something fits; SimReady is OpenUSD and
-   needs a conversion per object) and **distractors that only the prompt can separate**: two
-   drills that differ in colour and size, a large and a small mug, one partly occluded object.
+1. A clutter world `vs_world_clutter.sdf` with realistic textured objects from Gazebo Fuel and
+   **distractors that only the prompt can separate**:
+
+   | Role | Fuel model |
+   |---|---|
+   | drill 1 | OpenRobotics "Cordless Drill" |
+   | drill 2, other colour, scaled down via `<scale>` | OpenRobotics "Black and Decker Cordless Drill" |
+   | mugs, large / small / other colour | GoogleResearch "Cole_Hardware_Mug_Classic_Blue", "Room_Essentials_Mug_White_Yellow", "ACE_Coffee_Mug_Kristen_16_oz_cup" |
+   | tool distractor | GoogleResearch "Craftsman_Grip_Screwdriver_Phillips_Cushion" |
+   | negative prompt "hammer" | GoogleResearch "Cole_Hardware_Hammer_Black", only placed for a counter-test |
+
+   Later: NVIDIA SimReady Central (OpenUSD, needs a conversion per object to glTF/SDF).
 2. Ground-truth boxes from a Gazebo `boundingbox_camera` sensor next to the colour camera, so
    IoU and "right instance" are computed automatically. Record ~200 frames at several distances
    and lighting conditions.
@@ -119,7 +127,8 @@ Once `main` is clean (smooth tracking, `/gt/*` topics, FM image), branch off and
   SAM 2 propagates the mask every frame, which also gives the orientation for yaw control.
 - **SAM 3 / 3.1** as a single model that detects from text and tracks in streaming mode, as the
   counterpart: two specialised models vs. one general one, compared on speed and on the hard
-  prompt levels above.
+  prompt levels above. The weights on Hugging Face are gated: request access early, it may take
+  a while or be refused; the experiment is optional.
 Merge into `main` only if it beats the current detector + CSRT pipeline.
 
 ## Work split beyond the FMs
