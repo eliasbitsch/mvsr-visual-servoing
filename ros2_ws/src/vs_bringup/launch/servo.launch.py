@@ -26,6 +26,8 @@ def generate_launch_description():
         DeclareLaunchArgument('tracker', default_value='csrt'),
         DeclareLaunchArgument('refiner', default_value='none'),
         DeclareLaunchArgument('detector_period', default_value='1.0'),
+        DeclareLaunchArgument('detect_on_loss', default_value='false',
+                              description='Run the detector only while no track exists'),
         DeclareLaunchArgument('auto_start', default_value='false',
                               description='Start servoing as soon as the target is seen'),
 
@@ -37,7 +39,8 @@ def generate_launch_description():
              prefix=os.environ.get('VS_PYTHON', ''),
              parameters=[params, {'detector': arg('detector'), 'prompt': arg('prompt'),
                                   'tracker': arg('tracker'), 'refiner': arg('refiner'),
-                                  'detector_period': arg('detector_period')}]),
+                                  'detector_period': arg('detector_period'),
+                                  'detect_on_loss': arg('detect_on_loss')}]),
         Node(package='vs_control', executable='ibvs_node', output='screen',
              parameters=[params, {'auto_start': arg('auto_start')}]),
     ])

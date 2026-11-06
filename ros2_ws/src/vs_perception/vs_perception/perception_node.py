@@ -14,7 +14,7 @@ import cv2
 import rclpy
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.time import Time
 from sensor_msgs.msg import Image
 from vs_interfaces.msg import ObjectFeatures
@@ -35,6 +35,7 @@ class PerceptionNode(Node):
             'score_threshold': 0.3, 'device': 'cuda', 'tracker': 'csrt', 'refiner': 'none',
             'image_topic': '/camera/camera/color/image_raw', 'max_missed_detections': 3,
             'frame_buffer_size': 150, 'publish_debug_image': True,
+            'detect_on_loss': False,
         }
         for name, default in params.items():
             self.declare_parameter(name, default)
@@ -43,6 +44,8 @@ class PerceptionNode(Node):
         self.period = p['detector_period']
         self.max_missed = p['max_missed_detections']
         self.debug = p['publish_debug_image']
+        self.detect_on_loss = p['detect_on_loss']
+        self.device = p['device']
 
         self.get_logger().info(f'loading detector "{p["detector"]}" on {p["device"]} ...')
         t0 = time.monotonic()
@@ -52,7 +55,8 @@ class PerceptionNode(Node):
         self.refiner = REFINERS.create(p['refiner'], device=p['device'])
         self.refiner.load()
         self.tracker_name = p['tracker']
-        self.tracker = TRACKERS.create(self.tracker_name)
+        self.tracker = TRACKERS.create(self.tracker_name, device=self.device)
+        self.tracker.load()
         self.tracking = not isinstance(self.tracker, NoTracker)
         self.get_logger().info(f'models ready after {time.monotonic() - t0:.1f} s')
 
@@ -72,7 +76,11 @@ class PerceptionNode(Node):
 
         self.pub = self.create_publisher(ObjectFeatures, '/vs/features', 10)
         self.debug_pub = self.create_publisher(Image, '/vs/debug_image', 2)
-        self.create_subscription(Image, p['image_topic'], self.on_image, qos_profile_sensor_data)
+        # A slow tracker would otherwise work through a backlog of stale frames
+        qos = qos_profile_sensor_data
+        if self.tracker.slow:
+            qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
+        self.create_subscription(Image, p['image_topic'], self.on_image, qos)
         self.add_on_set_parameters_callback(self.on_params)
 
         self._stop = threading.Event()
@@ -93,7 +101,9 @@ class PerceptionNode(Node):
         while not self._stop.is_set():
             with self.latest_lock:
                 frame = self.latest
-            if frame is None or time.monotonic() < next_run:
+            # detect_on_loss: the model only runs while there is no track to follow
+            idle = self.detect_on_loss and self.track_box is not None
+            if frame is None or idle or time.monotonic() < next_run:
                 time.sleep(0.005)
                 continue
             next_run = time.monotonic() + self.period
@@ -117,7 +127,7 @@ class PerceptionNode(Node):
     def replay_tracker(self, det_seq, box):
         """Fresh tracker started on the detection frame and run up to the newest frame.
         Returns (tracker, box or None if lost, seq of the last frame it saw)."""
-        tracker = TRACKERS.create(self.tracker_name)
+        tracker = TRACKERS.create(self.tracker_name, device=self.device)
         buffered = self.buffered_since(det_seq)
         if not buffered or buffered[0][0] != det_seq:
             # Detection frame already dropped from the buffer: accept the small error
@@ -126,7 +136,10 @@ class PerceptionNode(Node):
         last = buffered[0][0]
         if not self.tracking:
             return tracker, box, last
-        for seq, _, img in buffered[1:]:
+        rest = buffered[1:]
+        if tracker.slow:  # skip the frames in between, the newest one is enough
+            rest = rest[-1:]
+        for seq, _, img in rest:
             box = tracker.update(img)
             if box is None:
                 return tracker, None, seq
@@ -165,7 +178,8 @@ class PerceptionNode(Node):
         tracking = self.tracking
         # Catch up the frames that arrived while the worker replayed (usually one or two)
         if self.track_box is not None and tracking and self.track_seq < self.seq:
-            for seq, _, frame in self.buffered_since(self.track_seq + 1):
+            pending = self.buffered_since(self.track_seq + 1)
+            for seq, _, frame in (pending[-1:] if self.tracker.slow else pending):
                 self.track_box = self.tracker.update(frame)
                 self.track_seq = seq
                 if self.track_box is None:
@@ -176,8 +190,10 @@ class PerceptionNode(Node):
         box = self.track_box
         # Without a tracker, features only exist at the moment a detection arrives
         if box is not None and (tracking or fresh):
-            mask = self.det_mask if fresh and self.det_mask is not None else \
-                self.refiner.refine(img, box)
+            mask = self.tracker.mask if tracking else None
+            if mask is None:
+                mask = self.det_mask if fresh and self.det_mask is not None else \
+                    self.refiner.refine(img, box)
             f = features.from_mask(mask) if mask is not None else None
             f = f or features.from_box(box)
             out.valid = True
@@ -200,7 +216,7 @@ class PerceptionNode(Node):
             color = (0, 255, 0) if f.source == 'detector' else (255, 200, 0)
             cv2.rectangle(vis, (x0, y0), (x1, y1), color, 2)
             cv2.circle(vis, (int(f.u), int(f.v)), 4, color, -1)
-        text = (f'{self.detector.registry_name} "{self.prompt}" {f.source} '
+        text = (f'{self.detector.registry_name}+{self.tracker_name} "{self.prompt}" {f.source} '
                 f'lat {f.detector_latency * 1000:.0f} ms age {f.detection_age:.2f} s')
         cv2.putText(vis, text, (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         return vis
