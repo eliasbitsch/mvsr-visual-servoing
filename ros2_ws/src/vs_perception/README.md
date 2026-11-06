@@ -6,12 +6,19 @@ Localises the target described by a text prompt and publishes image features on 
 | Part | Parameter | Available | Runs |
 |---|---|---|---|
 | Detector (foundation model) | `detector` | `grounding_dino`, `owlv2`, `yolo_world`, `vlm` | worker thread, every `detector_period` s |
-| Tracker | `tracker` | `csrt`, `kcf`, `none` | every camera frame |
+| Tracker | `tracker` | `csrt`, `kcf`, `sam2`, `none` | every camera frame (`sam2`: newest frame only) |
 | Mask refiner | `refiner` | `none`, `sam2` | every camera frame, on the tracked box |
 
 When a detection arrives it belongs to an old frame. The node re-initialises the tracker on that
 buffered frame and replays all frames since, so the detector latency does not cause a jump.
 `tracker:=none` is the baseline without tracking: features only exist when a detection arrives.
+
+`tracker:=sam2` (SAM 2.1 tiny, Ultralytics) keeps a memory bank seeded with the detector box and
+refreshed from its own confident masks; it returns a mask per frame, so centroid, area and angle
+come from the mask. It is slower than a camera period (about 150 ms per frame under WSL), so
+the node feeds it only the newest frame and subscribes with queue depth 1. With
+`detect_on_loss:=true` the detector runs only until the first track exists and again after the
+tracker loses the target (low object score, collapsed or flooded mask).
 
 ## Adding a foundation model
 

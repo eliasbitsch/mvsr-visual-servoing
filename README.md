@@ -53,9 +53,10 @@ Launch arguments of `servo.launch.py`:
 |---|---|---|
 | `detector` | `grounding_dino` | `grounding_dino`, `owlv2`, `yolo_world`, `vlm` |
 | `prompt` | `red box` | any text, objects in the world: red box, blue cylinder, yellow mug |
-| `tracker` | `csrt` | `csrt`, `kcf`, `none` |
+| `tracker` | `csrt` | `csrt`, `kcf`, `sam2`, `none` |
 | `refiner` | `none` | `none`, `sam2` |
 | `detector_period` | `1.0` | seconds between foundation model calls |
+| `detect_on_loss` | `false` | `true` runs the detector only while no track exists (use with `tracker:=sam2`) |
 | `gui` | `true` | `false` runs Gazebo headless |
 | `auto_start` | `false` | `true` starts servoing once the target is seen |
 
