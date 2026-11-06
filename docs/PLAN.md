@@ -131,6 +131,34 @@ Once `main` is clean (smooth tracking, `/gt/*` topics, FM image), branch off and
   a while or be refused; the experiment is optional.
 Merge into `main` only if it beats the current detector + CSRT pipeline.
 
+#### Result 1: Grounding DINO + SAM 2 tracker (06.11.2026, sim, headless)
+
+`tracker:=sam2` (SAM 2.1 tiny, Ultralytics `SAM2DynamicInteractivePredictor`): memory bank seeded
+with the DINO box, refreshed every 15 frames from its own confident mask, lost when the object
+score drops or the mask collapses/floods. `detect_on_loss:=true` calls DINO only until the first
+track exists and after a loss. Start: `ros2 launch vs_bringup servo.launch.py tracker:=sam2
+detect_on_loss:=true detector_period:=1.0`, then `/ibvs_node/start`.
+
+| | DINO + SAM 2 | DINO + CSRT (1 s period) |
+|---|---|---|
+| Closed loop converged | yes, 30 s (3 runs, 30-42 s) | yes, 40 s |
+| Final feature error norm | 0.004 | 0.003 |
+| Camera over the red box | x 0.600, y 0.000, z 0.356 m | x 0.600, y 0.000, z 0.432 m |
+| Features published (wall clock) | 4.1 Hz | 3.9 Hz |
+| Features per simulated second | 12 | 19 |
+| Detector calls | 2 in 30 s | 24 in 40 s |
+| Cost per tracker frame | 160 ms idle GPU, ~240 ms with Gazebo | ~ms |
+| Mask / orientation angle | yes | box only |
+
+Measured at a real-time factor of 0.2-0.3 (Gazebo, DINO and the tracker share one laptop; DINO
+took 0.9-1.4 s per call instead of the 0.31 s of an idle GPU; camera 4-7 Hz wall, 21 Hz sim),
+so both columns are limited by the camera in wall-clock terms. SAM 2 does not raise the feature
+rate over CSRT: it is launch-bound (about 150 ms per frame at 512 as well as 1024 px, bf16 does
+not help), so the node feeds it only the newest frame. Its gain is robustness (detector runs
+twice instead of 24 times) and the mask (centroid, area, angle). Not tested yet: occlusion and
+the clutter world. The mask prompt path of Ultralytics 8.4.203 `update_memory` is broken, so
+the memory refresh prompts with the mask's box.
+
 ## Work split beyond the FMs
 
 - **Elias:** Docker image, simulation, perception node (threading, tracker re-init with frame
