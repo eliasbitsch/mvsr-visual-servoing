@@ -61,9 +61,9 @@ same `Detector` interface, so the node, the tracker and the controller never cha
 
 | Person | GPU | Foundation models | Why this split |
 |---|---|---|---|
-| **Elias** | RTX 3080 Ti Laptop, 16 GB | **Grounding DINO** (main detector) + **SAM 2** (mask refiner, later video tracking) | Heaviest models, needs the VRAM; also runs the live demo |
-| **Philip** | RTX 3050, ~4 GB | **YOLO-World** (+ YOLOE if time) | Real-time open-vocabulary detector that fits 4 GB; baseline for "fast but less precise" |
-| **Jiayi** | to check | **OWLv2** + **Florence-2** | Two different families (CLIP-style vs. generative VLM grounding), good material for the comparison chapter |
+| **Elias** | RTX 3080 Ti Laptop, 16 GB | **Grounding DINO + SAM 2** (main pipeline) + **larger VLMs** (Qwen3-VL-8B, Gemma 4 E4B, GLM-4.6V) | Heaviest models, needs the VRAM; also runs the live demo |
+| **Philip** | RTX 3050, ~4 GB | **small VLMs** (Qwen3-VL-4B, Gemma 4 E2B, 4-bit via Ollama) + **YOLO-World** as fast baseline | VLMs that fit 4 GB; together with Elias' VLMs this gives the size/latency curve |
+| **Jiayi** | weak GPU / CPU | **OWLv2** + **Florence-2** (classic open-vocabulary detectors) | Small enough for CPU; evaluated offline on the recorded image set, so no live sim needed on her laptop |
 
 VLMs as detector (`detector:=vlm`, served by the compose service `ollama`) show the
 latency extreme: the tracker has to carry the loop. First test on a synthetic image (3080 Ti,
