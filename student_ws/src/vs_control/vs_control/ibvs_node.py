@@ -69,6 +69,7 @@ class IbvsNode(Node):
         self.converged_since = None
         # Yaw is only servoed if the reference view had a defined principal axis too
         self.desired_angle_valid = False
+        self.last_joint_stamp = 0.0
 
         self.tf = Buffer()
         TransformListener(self.tf, self)
@@ -119,6 +120,13 @@ class IbvsNode(Node):
         self.K = (msg.k[0], msg.k[4], msg.k[2], msg.k[5])
 
     def on_joints(self, msg):
+        # The node runs on wall time, so the TF buffer does not notice a simulation restart; its
+        # old transforms keep larger stamps and "latest" would return poses of the previous run.
+        stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        if stamp < self.last_joint_stamp - 1.0:
+            self.tf.clear()
+            self.get_logger().warn('simulation time jumped back, TF buffer cleared')
+        self.last_joint_stamp = stamp
         pos = dict(zip(msg.name, msg.position))
         if all(n in pos for n in self.p['arm_joints']):
             self.q = np.array([pos[n] for n in self.p['arm_joints']])

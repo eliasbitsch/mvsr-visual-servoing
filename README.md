@@ -25,6 +25,7 @@ student_ws/src/
   vs_perception/                     detectors (FM plug-ins), trackers, mask refiners, perception node
   vs_control/                        IBVS law, hand-eye transform, differential kinematics, safety
   vs_bringup/                        launch files (servo, web GUI bridge) and parameters
+  vs_evaluation/                     evaluation runner (all targets x start configurations, CSV)
 docs/                                plan, lab simulation docs
 scripts/                             helper scripts
 ```
@@ -125,7 +126,31 @@ server or SGLang through `VS_VLM_URL`; the model is chosen with `VS_VLM_MODEL`. 
 downloaded elsewhere can be copied into the volume: `scripts/import_ollama_models.sh <folder>`.
 A VLM call takes 1–2 s, the tracker carries the control loop in between.
 
-## 5. Topics
+## 5. Evaluation
+
+The evaluation script (assignment section 2.5) runs every target x start configuration on its own:
+reference pose, `capture_reference`, start configuration, servoing until converged or timeout. The
+ground truth is recorded for the metrics only.
+
+```bash
+docker compose run --rm fm ros2 run vs_evaluation run_eval --label dino_sam2
+docker compose run --rm fm ros2 run vs_evaluation run_eval --targets red_can --starts 1 3 --timeout 40
+```
+
+Run it while the simulation and `fm` (with the tracker you want to evaluate) are up. Results go to
+`data/eval/<time>_<label>/`:
+
+| File | Content |
+|---|---|
+| `summary.csv` | one row per run: success, converged, convergence time, final position and rotation error (raw and with the target's symmetry), final feature error, outcome (converged, timeout, target lost, not detected) |
+| `runs/<target>_S<n>.csv` | time series: features, feature error, commanded camera twist, ground-truth pose error, camera pose |
+| `config.json` | the arguments of the run |
+
+Success means converged within the timeout (60 s) and within 5 mm and 2 deg of the reference pose.
+Round objects (can, cup, ball) have no observable yaw, so their rotation error ignores it; the box
+is compared modulo 180 deg. Tolerances: `--pos-tol`, `--rot-tol`.
+
+## 6. Topics
 
 | Topic | Type | Note |
 |---|---|---|
@@ -136,7 +161,7 @@ A VLM call takes 1–2 s, the tracker carries the control loop in between.
 | `/forward_velocity_controller/commands` | `std_msgs/Float64MultiArray` | joint velocities (control output) |
 | `/ground_truth/*` | | lab ground truth, **evaluation only**, never used in control |
 
-## 6. Sources and licences
+## 7. Sources and licences
 
 - Lab simulation (`vs_sim`, Dockerfile, compose files): course material, TW-Robotics MVSR.
 - Grounding DINO (IDEA-Research, Apache 2.0), OWLv2 (Google, Apache 2.0) via Hugging Face transformers.
