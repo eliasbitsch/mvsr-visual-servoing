@@ -78,6 +78,9 @@ class Vlm(Detector):
                                                               'qwen3-vl:8b-instruct'))
         self.format = self.options.get('box_format', _box_format(self.model))
         self.timeout = float(self.options.get('timeout', 60))
+        # Longest image side sent to the model, 0 = full resolution. Fewer pixels -> fewer
+        # vision tokens -> faster answer; boxes come back normalised, so nothing else changes.
+        self.max_side = int(self.options.get('max_side', os.environ.get('VS_VLM_MAX_SIDE', 0)))
         # Fail early with a clear message instead of on the first frame
         names = [m['id'] for m in _get_json(f'{self.url}/models')['data']]
         if self.model not in names:
@@ -85,7 +88,11 @@ class Vlm(Detector):
 
     def detect(self, image_rgb, prompt):
         _, order, template = FORMATS[self.format]
-        _, jpg = cv2.imencode('.jpg', image_rgb[:, :, ::-1], [cv2.IMWRITE_JPEG_QUALITY, 90])
+        sent = image_rgb
+        scale = self.max_side / max(image_rgb.shape[:2]) if self.max_side else 1.0
+        if scale < 1.0:
+            sent = cv2.resize(image_rgb, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        _, jpg = cv2.imencode('.jpg', sent[:, :, ::-1], [cv2.IMWRITE_JPEG_QUALITY, 90])
         image_url = 'data:image/jpeg;base64,' + base64.b64encode(jpg.tobytes()).decode()
         body = {
             'model': self.model,

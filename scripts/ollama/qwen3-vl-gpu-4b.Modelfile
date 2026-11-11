@@ -1,0 +1,11 @@
+# Qwen3-VL 4B (instruct, no thinking) forced fully onto a 4 GB GPU.
+# Ollama keeps ~2 GB in reserve for the vision encoder and would otherwise put half of the
+# layers on the CPU (RTX 3050 Ti: 9 s per frame). All 37 layers on the GPU: ~1.5 s per frame.
+#   ollama pull qwen3-vl:4b-instruct
+#   ollama create qwen3-vl-gpu:4b -f scripts/ollama/qwen3-vl-gpu-4b.Modelfile
+# Needs about 3.3 GB free VRAM: close the Gazebo GUI if loading fails with out of memory.
+FROM qwen3-vl:4b-instruct
+PARAMETER num_gpu 99
+PARAMETER num_ctx 2048
+# All layers run on the GPU; more CPU threads only busy-wait and starve Gazebo and the tracker
+PARAMETER num_thread 2
