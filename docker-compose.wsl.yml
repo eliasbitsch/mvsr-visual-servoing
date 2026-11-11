@@ -30,5 +30,8 @@ services:
       - /dev/dxg:/dev/dxg
     environment:
       - LD_LIBRARY_PATH=/usr/lib/wsl/lib
+      # Same Gazebo transport settings as sim: the evaluation runner calls the world's services
+      - GZ_IP=127.0.0.1
+      - GZ_PARTITION=vs_lab
     volumes:
       - /usr/lib/wsl:/usr/lib/wsl:ro

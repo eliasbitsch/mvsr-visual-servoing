@@ -34,7 +34,7 @@ class PerceptionNode(Node):
     def __init__(self):
         super().__init__('perception_node')
         params = {
-            'detector': 'grounding_dino', 'prompt': 'red can', 'detector_period': 1.0,
+            'detector': 'grounding_dino', 'prompt': 'red can', 'detector_period': 1.0, 'detector_delay': 0.0,
             'score_threshold': 0.3, 'device': 'cuda', 'tracker': 'csrt', 'refiner': 'none',
             'image_topic': '/camera/image_raw', 'max_missed_detections': 3,
             'frame_buffer_size': 150, 'publish_debug_image': True,
@@ -45,6 +45,8 @@ class PerceptionNode(Node):
         p = {name: self.get_parameter(name).value for name in params}
         self.prompt = p['prompt']
         self.period = p['detector_period']
+        # Extra latency per FM call for the inference-time study (emulates slower hardware)
+        self.delay = p['detector_delay']
         self.max_missed = p['max_missed_detections']
         self.debug = p['publish_debug_image']
         self.detect_on_loss = p['detect_on_loss']
@@ -99,6 +101,8 @@ class PerceptionNode(Node):
                 self.get_logger().info(f'new prompt "{self.prompt}"')
             elif c.name == 'detector_period':
                 self.period = c.value
+            elif c.name == 'detector_delay':
+                self.delay = c.value
         return SetParametersResult(successful=True)
 
     def detector_loop(self):
@@ -120,6 +124,8 @@ class PerceptionNode(Node):
             except Exception as exc:  # keep the node alive, the tracker may still run
                 self.get_logger().error(f'detector failed: {exc}')
                 dets = []
+            if self.delay > 0:
+                time.sleep(self.delay)
             latency = time.monotonic() - t0
             best = max(dets, key=lambda d: d.score) if dets else None
             replay = self.replay_tracker(seq, best.box) if best else None

@@ -44,6 +44,8 @@ ibvs_node:
     joint_limit_margin: 0.1
     dls_damping: 0.05
     feature_timeout: 0.5
+    # Gap without features after which a run ends (perception reporting the target lost ends it at once)
+    lost_timeout: 2.0
     converged_threshold: 0.01
     converged_hold_time: 1.0
 

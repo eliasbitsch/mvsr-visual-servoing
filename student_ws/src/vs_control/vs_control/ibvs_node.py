@@ -40,7 +40,7 @@ PARAMS = {
     'desired_depth': 0.30, 'control_yaw': True,
     'align_optical_axis_down': True, 'align_gain': 1.0,
     'max_linear_speed': 0.10, 'max_angular_speed': 0.5, 'joint_speed_scale': 0.5,
-    'joint_limit_margin': 0.1, 'dls_damping': 0.05, 'feature_timeout': 0.5,
+    'joint_limit_margin': 0.1, 'dls_damping': 0.05, 'feature_timeout': 0.5, 'lost_timeout': 2.0,
     'converged_threshold': 0.01, 'converged_hold_time': 1.0, 'auto_start': False,
     # Safety guard (see safety.py)
     'collision_margin': 0.01, 'safety_lookahead': 0.2, 'min_height': 0.03,
@@ -188,12 +188,19 @@ class IbvsNode(Node):
         self.publish_joint_velocities(np.zeros(len(self.p['arm_joints'])))
         self.get_logger().warn(f'holding: {reason}', throttle_duration_sec=2.0)
 
-    def target_ok(self):
+    def target_state(self):
+        """'ok', 'stale' (no fresh features, e.g. a slow frame) or 'lost' (perception says so,
+        or nothing for longer than lost_timeout)."""
         f = self.features
         if f is None or not f.valid:
-            return False
+            return 'lost'
         age = (self.get_clock().now() - self.features_time).nanoseconds * 1e-9
-        return age <= self.p['feature_timeout']
+        if age <= self.p['feature_timeout']:
+            return 'ok'
+        return 'stale' if age <= self.p['lost_timeout'] else 'lost'
+
+    def target_ok(self):
+        return self.target_state() == 'ok'
 
     def step(self):
         ready = self.model is not None and self.K is not None and self.q is not None
@@ -204,8 +211,15 @@ class IbvsNode(Node):
             return
         if not ready:
             return self.halt('waiting for model, camera info or joint states')
-        if not self.target_ok():
-            return self.halt('target lost or features stale')
+        state = self.target_state()
+        if state == 'stale':
+            return self.halt('features stale, holding')
+        if state == 'lost':
+            # End the run instead of holding: a later detection may be a different object (seen:
+            # with the can gone, DINO picked another object as "red can" and the arm drove to it)
+            self.active = False
+            self.halt('target lost, servoing stopped (call ~/start again)')
+            return
         try:
             T_ec = self.tf.lookup_transform(self.p['ee_frame'], self.p['camera_frame'], Time())
             T_bc = self.tf.lookup_transform(self.p['base_frame'], self.p['camera_frame'], Time())
