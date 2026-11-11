@@ -33,6 +33,35 @@ services:
               count: all
               capabilities: [gpu]
 
+  # WebSocket bridge for Lichtblick (port 8766) plus the URDF relay, from student_ws (vs_bringup
+  # viz.launch.py). Waits until the fm service has built the workspace instead of building it twice.
+  foxglove:
+    image: vs-fm:jazzy
+    network_mode: host
+    # Fast DDS sends data between local processes through shared memory; without the host IPC
+    # namespace discovery works but no messages arrive
+    ipc: host
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
+    volumes:
+      - ./student_ws:/ws/student
+    command:
+      - bash
+      - -lc
+      - >-
+        until [ -f /ws/student/install/vs_bringup/share/vs_bringup/launch/viz.launch.py ]; do sleep 2; done;
+        source /ws/student/install/setup.bash && ros2 launch vs_bringup viz.launch.py
+    restart: unless-stopped
+
+  # Web GUI: http://localhost:8081/?ds=foxglove-websocket&ds.url=ws://localhost:8766
+  lichtblick:
+    image: ghcr.io/lichtblick-suite/lichtblick:1.30.0
+    network_mode: host
+    command: ["caddy", "file-server", "--listen", ":8081"]
+    volumes:
+      - ./docker/lichtblick-layout.json:/lichtblick/default-layout.json:ro
+    restart: unless-stopped
+
   # VLM server for detector:=vlm. Port 11435 so it does not clash with an Ollama on the host.
   ollama:
     image: ollama/ollama:0.40.14

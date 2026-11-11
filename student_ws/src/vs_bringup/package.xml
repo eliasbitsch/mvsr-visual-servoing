@@ -2,7 +2,7 @@
 <package format="3">
   <name>vs_bringup</name>
   <version>0.2.0</version>
-  <description>Launch file and parameters for FM perception and IBVS on the lab simulation.</description>
+  <description>Launch files and parameters for FM perception, IBVS and the web GUI on the lab simulation.</description>
   <maintainer email="eliasbitsch1@gmail.com">Elias Bitsch</maintainer>
   <license>Apache-2.0</license>
 
@@ -10,6 +10,7 @@
 
   <exec_depend>vs_perception</exec_depend>
   <exec_depend>vs_control</exec_depend>
+  <exec_depend>foxglove_bridge</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

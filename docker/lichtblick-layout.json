@@ -1,0 +1,288 @@
+{
+  "configById": {
+    "3D!robot": {
+      "followTf": "base_link",
+      "followMode": "follow-none",
+      "scene": {
+        "transforms": {
+          "showLabel": false,
+          "axisScale": 0.25
+        }
+      },
+      "cameraState": {
+        "perspective": true,
+        "distance": 2.2,
+        "phi": 55,
+        "thetaOffset": 135,
+        "targetOffset": [
+          0.35,
+          -0.15,
+          0.1
+        ],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "fovy": 45,
+        "near": 0.01,
+        "far": 100
+      },
+      "transforms": {
+        "frame:camera_optical_frame": {
+          "visible": true
+        }
+      },
+      "topics": {
+        "/robot_description": {
+          "visible": false
+        }
+      },
+      "layers": {
+        "grid": {
+          "visible": true,
+          "layerId": "foxglove.Grid",
+          "instanceId": "grid",
+          "size": 2,
+          "divisions": 20,
+          "frameId": "base_link"
+        },
+        "urdf": {
+          "layerId": "foxglove.Urdf",
+          "instanceId": "urdf",
+          "label": "UR5e (package:// meshes)",
+          "sourceType": "topic",
+          "topic": "/vs/robot_description_viz",
+          "url": "",
+          "filePath": "",
+          "parameter": "",
+          "framePrefix": "",
+          "displayMode": "visual",
+          "fallbackColor": "#ffffff",
+          "visible": true
+        }
+      },
+      "lichtblickPanelTitle": "Robot (UR5e)"
+    },
+    "Image!debug": {
+      "cameraState": {
+        "distance": 20,
+        "perspective": true,
+        "phi": 60,
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOffset": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "thetaOffset": 45,
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-pose",
+      "scene": {},
+      "transforms": {},
+      "topics": {},
+      "layers": {},
+      "imageMode": {
+        "imageTopic": "/vs/debug_image"
+      },
+      "lichtblickPanelTitle": "Camera with detection"
+    },
+    "Plot!feature": {
+      "paths": [
+        {
+          "value": "/ibvs_node/error.data[0]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "e_x"
+        },
+        {
+          "value": "/ibvs_node/error.data[1]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "e_y"
+        },
+        {
+          "value": "/ibvs_node/error.data[2]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "e_area"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 30,
+      "sidebarDimension": 240,
+      "lichtblickPanelTitle": "Image feature error (normalised)"
+    },
+    "Plot!pose": {
+      "paths": [
+        {
+          "value": "/ground_truth/pose_error.data[6]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "|e_t| [m]"
+        },
+        {
+          "value": "/ground_truth/pose_error.data[7]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "|e_r| [rad]"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 30,
+      "sidebarDimension": 240,
+      "lichtblickPanelTitle": "Pose error vs. reference (ground truth, evaluation only)"
+    },
+    "Plot!twist": {
+      "paths": [
+        {
+          "value": "/ibvs_node/camera_twist.twist.linear.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "v_x"
+        },
+        {
+          "value": "/ibvs_node/camera_twist.twist.linear.y",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "v_y"
+        },
+        {
+          "value": "/ibvs_node/camera_twist.twist.linear.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "v_z"
+        },
+        {
+          "value": "/ibvs_node/camera_twist.twist.angular.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "w_z"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 30,
+      "sidebarDimension": 240,
+      "lichtblickPanelTitle": "Commanded camera velocity"
+    },
+    "CallService!capture": {
+      "serviceName": "/ibvs_node/capture_reference",
+      "requestPayload": "{}",
+      "layout": "vertical",
+      "buttonText": "Capture reference",
+      "buttonColor": "#2b6cb0",
+      "lichtblickPanelTitle": "1. Reference"
+    },
+    "CallService!start": {
+      "serviceName": "/ibvs_node/start",
+      "requestPayload": "{}",
+      "layout": "vertical",
+      "buttonText": "Start servoing",
+      "buttonColor": "#2f855a",
+      "lichtblickPanelTitle": "2. Servo"
+    },
+    "CallService!stop": {
+      "serviceName": "/ibvs_node/stop",
+      "requestPayload": "{}",
+      "layout": "vertical",
+      "buttonText": "Stop",
+      "buttonColor": "#c2410c",
+      "lichtblickPanelTitle": "Stop"
+    },
+    "StateTransitions!conv": {
+      "lichtblickPanelTitle": "Converged",
+      "paths": [
+        {
+          "value": "/ibvs_node/converged.data",
+          "timestampMethod": "receiveTime",
+          "label": "converged"
+        }
+      ],
+      "isSynced": true,
+      "showPoints": false
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "first": {
+      "first": "3D!robot",
+      "second": {
+        "first": "CallService!capture",
+        "second": {
+          "first": "CallService!start",
+          "second": {
+            "first": "CallService!stop",
+            "second": "StateTransitions!conv",
+            "direction": "row",
+            "splitPercentage": 50
+          },
+          "direction": "row",
+          "splitPercentage": 33
+        },
+        "direction": "row",
+        "splitPercentage": 25
+      },
+      "direction": "column",
+      "splitPercentage": 68
+    },
+    "second": {
+      "first": "Image!debug",
+      "second": {
+        "first": "Plot!feature",
+        "second": {
+          "first": "Plot!pose",
+          "second": "Plot!twist",
+          "direction": "column",
+          "splitPercentage": 50
+        },
+        "direction": "column",
+        "splitPercentage": 33
+      },
+      "direction": "column",
+      "splitPercentage": 40
+    },
+    "direction": "row",
+    "splitPercentage": 50
+  }
+}

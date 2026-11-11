@@ -17,13 +17,14 @@ Dockerfile, docker-compose.yml,      lecturer's lab simulation (image vs-sim:jaz
 docker-compose.novnc.yml, vs_sim/,
 docker/entrypoint.sh, docker/headless_test.sh, run_headless_test.sh
 docker/Dockerfile.fm                 ours: PyTorch (CUDA), OpenCV 4.12, foundation models on top of vs-sim:jazzy
-docker-compose.fm.yml                ours: services fm / fm-nvidia (our stack) and ollama (VLM server)
+docker-compose.fm.yml                ours: fm / fm-nvidia (our stack), foxglove + lichtblick (web GUI), ollama (VLM server)
+docker/lichtblick-layout.json        ours: default layout of the web GUI
 docker-compose.wsl.yml               ours: GPU under Windows/WSL2 (Mesa d3d12, CUDA via /usr/lib/wsl)
 student_ws/src/
   vs_interfaces/                     ObjectFeatures.msg
   vs_perception/                     detectors (FM plug-ins), trackers, mask refiners, perception node
   vs_control/                        IBVS law, hand-eye transform, differential kinematics, safety
-  vs_bringup/                        launch file and parameters
+  vs_bringup/                        launch files (servo, web GUI bridge) and parameters
 docs/                                plan, lab simulation docs
 scripts/                             helper scripts
 ```
@@ -62,6 +63,20 @@ docker compose run --rm fm ros2 service call /ibvs_node/capture_reference std_sr
 docker compose run --rm sim ros2 run vs_sim go_to_start --target red_can --start 1
 docker compose run --rm fm ros2 service call /ibvs_node/start std_srvs/srv/Trigger
 ```
+
+### Web GUI (Lichtblick)
+
+```bash
+docker compose up -d foxglove lichtblick     # bridge on ws://localhost:8766, GUI on :8081
+```
+
+Then open <http://localhost:8081/?ds=foxglove-websocket&ds.url=ws://localhost:8766>. The layout
+(`docker/lichtblick-layout.json`) loads by default: the UR5e in 3D, the camera with the detection,
+plots of the image feature error, the ground-truth pose error and the commanded camera velocity, a
+converged timeline, and buttons for *Capture reference*, *Start servoing* and *Stop*. With the GUI
+the simulation can run with `gazebo_gui:=false`. If an older layout shows up, delete the stored
+layout in Lichtblick (Layouts tab) and reload. The bridge waits until the `fm` service has built
+`student_ws`, so start `fm` first.
 
 `camera_rate:=15` is enough for our perception (it handles about 12 frames per second) and halves
 the rendering load. Add `gazebo_gui:=false` while working on the controller: the Gazebo window
