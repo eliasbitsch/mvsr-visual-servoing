@@ -20,6 +20,9 @@ arm_trajectory_controller:
     command_interfaces: [position]
     state_interfaces: [position, velocity]
     allow_nonzero_velocity_at_trajectory_end: false
+    # Hold the measured pose on activation; the stale position command from before servoing
+    # would otherwise snap the arm back to where the last trajectory ended.
+    set_last_command_interface_value_as_state_on_activation: false
 
 arm_velocity_controller:
   ros__parameters:
