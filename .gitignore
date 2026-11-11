@@ -1,9 +1,14 @@
 .env
-data/
-ros2_ws/build/
-ros2_ws/install/
-ros2_ws/log/
+data/*
+!data/.gitkeep
+student_ws/build/
+student_ws/install/
+student_ws/log/
 __pycache__/
 *.pyc
+.pytest_cache/
 *.pt
 moodle/
+# macOS metadata (created on external / non-APFS drives)
+**/._*
+**/.DS_Store

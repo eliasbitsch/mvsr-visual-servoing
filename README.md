@@ -1,121 +1,117 @@
 # MVSR Lab – Visual Servoing with Foundation Models
 
-ABB GoFa (CRB 15000-5) with Robotiq 2F-85 and an eye-in-hand Intel RealSense D435 in Gazebo
-Harmonic. A foundation model finds the target from a text prompt, a tracker follows it on every
-frame, and an IBVS controller drives the camera into the reference pose.
-Team plan and FM assignment: [docs/PLAN.md](docs/PLAN.md). Joints, frames, commands and
-safety rules of the cell: [docs/ROBOT.md](docs/ROBOT.md).
+A UR5e with a wrist camera in the lab simulation (Gazebo Harmonic, ROS 2 Jazzy). A foundation
+model finds the target from a text prompt ("red can"), a tracker follows it on every frame, and an
+image-based visual servoing (IBVS) controller drives the camera into the reference pose above it.
+Team plan and FM assignment: [docs/PLAN.md](docs/PLAN.md). The lab simulation itself, its
+targets, start configurations and ground truth: [docs/LAB_SIM.md](docs/LAB_SIM.md).
 
-Stack: Ubuntu 24.04, ROS 2 Jazzy, Gazebo Harmonic, OpenCV 4.12 (Python), ros2_control,
-MoveIt 2, pinocchio, PyTorch (CUDA 12.4), Hugging Face transformers, Ultralytics.
+Group C: Elias Bitsch, Philip Stix, Jiayi Zhou · Track: FM
 
-## 1. Prerequisites
+## 1. Layout
 
-**Windows 11:** NVIDIA driver on Windows, WSL2 with Ubuntu 24.04, Docker Engine installed
-*inside* that Ubuntu (not Docker Desktop). GPU rendering goes through Mesa's d3d12 driver
-(`/dev/dxg`), CUDA through the driver libraries in `/usr/lib/wsl/lib`.
-**Native Ubuntu 24.04:** Docker Engine, NVIDIA driver and nvidia-container-toolkit.
+The repository is the lecturer's template, unchanged, plus our packages and Docker files:
 
-## 2. Setup
-
-```bash
-git clone <repo> mvsr-vs && cd mvsr-vs        # inside WSL: e.g. /mnt/c/git/FH/MVSRL
-cp .env.example .env                           # pick the COMPOSE_FILE line for your machine
-docker compose build                           # ~20 min, ~15 GB (IMAGE_TARGET=sim: ~9 GB)
-docker compose up -d                           # first start builds the ROS workspace
-docker compose exec dev bash
+```
+Dockerfile, docker-compose.yml,      lecturer's lab simulation (image vs-sim:jazzy)
+docker-compose.novnc.yml, vs_sim/,
+docker/entrypoint.sh, docker/headless_test.sh, run_headless_test.sh
+docker/Dockerfile.fm                 ours: PyTorch (CUDA), OpenCV 4.12, foundation models on top of vs-sim:jazzy
+docker-compose.fm.yml                ours: services fm / fm-nvidia (our stack) and ollama (VLM server)
+docker-compose.wsl.yml               ours: GPU under Windows/WSL2 (Mesa d3d12, CUDA via /usr/lib/wsl)
+student_ws/src/
+  vs_interfaces/                     ObjectFeatures.msg
+  vs_perception/                     detectors (FM plug-ins), trackers, mask refiners, perception node
+  vs_control/                        IBVS law, hand-eye transform, differential kinematics, safety
+  vs_bringup/                        launch file and parameters
+docs/                                plan, lab simulation docs
+scripts/                             helper scripts
 ```
 
-Native Ubuntu only: run `xhost +local:docker` once per login so windows can open.
-WSL only: keep a WSL terminal open while working. WSL shuts its VM down when no WSL process is
-left, which stops all containers (they exit with code 255).
+## 2. Prerequisites
 
-## 3. Run
+- **Windows 11:** NVIDIA driver on Windows, WSL2 with Ubuntu 24.04, Docker Engine installed
+  *inside* that Ubuntu (not Docker Desktop). Run every command below in a WSL shell.
+- **Ubuntu 24.04:** Docker Engine, NVIDIA driver and `nvidia-container-toolkit`. Run
+  `xhost +local:docker` once per login so the simulation windows can open.
 
-Inside the container (`docker compose exec dev bash`):
+## 3. Setup
 
 ```bash
-# Simulation only: Gazebo, controllers, camera topics
-ros2 launch vs_bringup sim.launch.py
-
-# Full pipeline
-ros2 launch vs_bringup servo.launch.py detector:=grounding_dino prompt:="red box"
-
-# In a second shell: watch the detections, then start servoing
-ros2 run rqt_image_view rqt_image_view /vs/debug_image
-ros2 service call /ibvs_node/start std_srvs/srv/Trigger
-ros2 service call /ibvs_node/stop std_srvs/srv/Trigger
+git clone https://github.com/eliasbitsch/mvsr-visual-servoing.git && cd mvsr-visual-servoing
+cp .env.example .env            # keep the COMPOSE_FILE line for your machine
+docker compose build sim        # lab simulation, ~10 min
+docker compose build fm         # our stack on top of it, ~20 min, ~12 GB
 ```
 
-Launch arguments of `servo.launch.py`:
+## 4. Run
+
+Three terminals in the repository folder. On Ubuntu with NVIDIA use `sim-nvidia` / `fm-nvidia`
+instead of `sim` / `fm`.
+
+```bash
+# 1: lab simulation with Gazebo and the camera view
+docker compose run --rm sim ros2 launch vs_sim vs_sim.launch.py target:=red_can camera_rate:=15
+
+# 2: start perception + IBVS (builds student_ws on start)
+docker compose run --rm fm
+
+# 3: take the reference features at the reference pose, move to a start configuration, servo
+docker compose run --rm sim ros2 run vs_sim go_to_start --target red_can --reference
+docker compose run --rm fm ros2 service call /ibvs_node/capture_reference std_srvs/srv/Trigger
+docker compose run --rm sim ros2 run vs_sim go_to_start --target red_can --start 1
+docker compose run --rm fm ros2 service call /ibvs_node/start std_srvs/srv/Trigger
+```
+
+`camera_rate:=15` is enough for our perception (it handles about 12 frames per second) and halves
+the rendering load. Add `gazebo_gui:=false` while working on the controller: the Gazebo window
+alone costs about 1.4 CPU cores, the camera view still opens.
+
+Under WSL keep the terminals open: WSL shuts its VM down when no WSL session is left, and the
+containers then exit with code 255.
+
+Other prompts and detectors go after the service name, for example
+`docker compose run --rm fm ros2 launch vs_bringup servo.launch.py detector:=owlv2 prompt:="blue box"`.
 
 | Argument | Default | Values |
 |---|---|---|
 | `detector` | `grounding_dino` | `grounding_dino`, `owlv2`, `yolo_world`, `vlm` |
-| `prompt` | `red box` | any text, objects in the world: red box, blue cylinder, yellow mug |
+| `prompt` | `red can` | any text; FM targets in the world: red can, blue box, green cup, yellow ball |
 | `tracker` | `csrt` | `csrt`, `kcf`, `sam2`, `none` |
 | `refiner` | `none` | `none`, `sam2` |
 | `detector_period` | `1.0` | seconds between foundation model calls |
 | `detect_on_loss` | `false` | `true` runs the detector only while no track exists (use with `tracker:=sam2`) |
-| `gui` | `true` | `false` runs Gazebo headless |
 | `auto_start` | `false` | `true` starts servoing once the target is seen |
-
-Setting the reference pose from the current view (move the arm there first):
-`ros2 service call /ibvs_node/capture_reference std_srvs/srv/Trigger`.
 
 Model weights are downloaded on first use into the `models` Docker volume.
 
 ### Vision-language models (Qwen3-VL, Gemma 4) via Ollama
 
 ```bash
-docker compose --profile vlm up -d      # Ollama on port 11435, pulls the models once (~13 GB)
-docker compose exec dev bash
-ros2 launch vs_bringup servo.launch.py detector:=vlm prompt:="red box" detector_period:=2.0
+docker compose --profile vlm up -d ollama
+docker compose exec ollama ollama pull qwen3-vl:8b-instruct
+docker compose run --rm fm ros2 launch vs_bringup servo.launch.py detector:=vlm detector_period:=2.0
 ```
 
-The detector speaks the OpenAI-compatible chat API, so Ollama can be swapped for vLLM,
-llama.cpp server or SGLang by changing `VS_VLM_URL`. The model is chosen with `VS_VLM_MODEL`
-(default `qwen3-vl:8b-instruct`, also `gemma4:e4b`). Already downloaded models (e.g. from an
-Ollama on Windows) can be copied into the volume instead of downloading again:
-`scripts/import_ollama_models.sh /mnt/c/Users/<you>/models/ollama`. Mounting that folder directly
-(`VS_OLLAMA_STORE`) also works but loads about twice as slowly through `/mnt/c` (measured ~70 s
-vs. ~40 s for an 8B model, 3 s once cached). Do not run a second Ollama on the host at the same
-time, each loads its own copy into VRAM.
-A VLM call takes 1–2 s (10–20 s for the first one, which loads the model), the tracker carries
-the control loop in between.
-
-## 4. Structure
-
-```
-docker/                Dockerfile (stages sim, fm), entrypoint
-compose*.yaml          base service + per-machine overrides (WSL, Linux GPU, Linux GUI), Ollama
-docs/PLAN.md           team plan, FM assignment, milestones
-docs/ROBOT.md          joints, frames, controllers, commands, safety rules
-scripts/               helper scripts (import existing Ollama models)
-ros2_ws/src/
-  gofa_description/    GoFa URDF macro + meshes
-  vs_bringup/          cell xacro, Gazebo world, controllers, launch files, parameters
-  vs_interfaces/       ObjectFeatures.msg
-  vs_perception/       detectors (FM plug-ins), trackers, mask refiners, perception node
-  vs_control/          IBVS law, hand-eye transform, differential kinematics, safety
-```
+The detector speaks the OpenAI-compatible chat API, so Ollama can be swapped for vLLM, llama.cpp
+server or SGLang through `VS_VLM_URL`; the model is chosen with `VS_VLM_MODEL`. Models already
+downloaded elsewhere can be copied into the volume: `scripts/import_ollama_models.sh <folder>`.
+A VLM call takes 1–2 s, the tracker carries the control loop in between.
 
 ## 5. Topics
 
 | Topic | Type | Note |
 |---|---|---|
-| `/camera/camera/color/image_raw` | `sensor_msgs/Image` | 640x480 @ 30 Hz |
-| `/camera/camera/aligned_depth_to_color/image_raw` | `sensor_msgs/Image` | 32FC1, metres |
+| `/camera/image_raw`, `/camera/camera_info` | `sensor_msgs` | lab camera, 640x480 |
 | `/vs/features` | `vs_interfaces/ObjectFeatures` | centroid, area, angle, box |
 | `/vs/debug_image` | `sensor_msgs/Image` | detections drawn |
 | `/ibvs_node/error`, `/ibvs_node/camera_twist`, `/ibvs_node/converged` | | for the evaluation |
-| `/arm_velocity_controller/commands` | `std_msgs/Float64MultiArray` | joint velocities |
-| `/gt/<object>/pose` | `geometry_msgs/PoseStamped` | ground truth, **evaluation only** |
+| `/forward_velocity_controller/commands` | `std_msgs/Float64MultiArray` | joint velocities (control output) |
+| `/ground_truth/*` | | lab ground truth, **evaluation only**, never used in control |
 
 ## 6. Sources and licences
 
-- GoFa meshes and kinematics: ROS-Industrial `abb_crb15000_support` (Apache 2.0); inertials added by us.
-- Robotiq 2F-85: PickNik `ros2_robotiq_gripper` (BSD-3), RealSense D435: Intel `realsense-ros` (Apache 2.0).
+- Lab simulation (`vs_sim`, Dockerfile, compose files): course material, TW-Robotics MVSR.
 - Grounding DINO (IDEA-Research, Apache 2.0), OWLv2 (Google, Apache 2.0) via Hugging Face transformers.
 - YOLO-World and SAM 2 wrappers: Ultralytics (AGPL-3.0); SAM 2 weights by Meta (Apache 2.0).
 - Qwen3-VL (Alibaba, Apache 2.0) and Gemma 4 (Google, Apache 2.0) served by Ollama (MIT).

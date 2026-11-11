@@ -1,0 +1,34 @@
+# Windows + WSL2 (Docker Engine inside WSL Ubuntu): GPU rendering via Mesa's d3d12 driver on /dev/dxg.
+# Not part of the lecturer's package. Run from a WSL shell and keep it in the foreground: WSL shuts
+# its VM down when no WSL session is open, and the containers then die with exit code 255.
+# Usage: README.md. Without an NVIDIA GPU: VS_GPU=Intel (or AMD); no usable GPU at all: VS_SOFTWARE_GL=1
+services:
+  sim:
+    devices: !override
+      - /dev/dxg:/dev/dxg
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}
+      - XDG_RUNTIME_DIR=/tmp/runtime-root
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib
+      - GALLIUM_DRIVER=d3d12
+      # Substring of the adapter name; laptops with an iGPU otherwise render on the iGPU
+      - MESA_D3D12_DEFAULT_ADAPTER_NAME=${VS_GPU:-NVIDIA}
+      - LIBGL_ALWAYS_SOFTWARE=${VS_SOFTWARE_GL:-0}
+      # The image has no Qt Wayland plugin; with WAYLAND_DISPLAY set Qt may still try it
+      - QT_QPA_PLATFORM=xcb
+      # WSL mirrored networking loses gz multicast discovery without these
+      - GZ_IP=127.0.0.1
+      - GZ_PARTITION=vs_lab
+    volumes:
+      - /mnt/wslg:/mnt/wslg:rw
+      - /usr/lib/wsl:/usr/lib/wsl:ro
+
+  # PyTorch reaches CUDA through the libcuda.so that Windows exposes in /usr/lib/wsl/lib
+  fm:
+    devices:
+      - /dev/dxg:/dev/dxg
+    environment:
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib
+    volumes:
+      - /usr/lib/wsl:/usr/lib/wsl:ro

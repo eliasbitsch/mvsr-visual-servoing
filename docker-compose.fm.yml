@@ -1,0 +1,58 @@
+# Our stack (FM perception + IBVS) next to the lab simulation from docker-compose.yml.
+# Image: docker/Dockerfile.fm on top of vs-sim:jazzy. Usage and GPU variants: README.md.
+services:
+  fm:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.fm
+      # The default bridge dropped the 2.5 GB PyTorch download under WSL
+      network: host
+    image: vs-fm:jazzy
+    network_mode: host
+    ipc: host
+    stdin_open: true
+    tty: true
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
+      # OpenAI-compatible VLM endpoint for detector:=vlm (the ollama service below, or vLLM, ...)
+      - VS_VLM_URL=${VS_VLM_URL:-http://localhost:11435/v1}
+      - VS_VLM_MODEL=${VS_VLM_MODEL:-qwen3-vl:8b-instruct}
+    volumes:
+      - ./student_ws:/ws/student
+      - ./data:/root/vs_data
+      - models:/models
+    command: ["bash", "-lc", "cd /ws/student && colcon build --symlink-install && source install/setup.bash && ros2 launch vs_bringup servo.launch.py"]
+
+  fm-nvidia:
+    extends: fm
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # VLM server for detector:=vlm. Port 11435 so it does not clash with an Ollama on the host.
+  ollama:
+    image: ollama/ollama:0.40.14
+    profiles: [vlm]
+    network_mode: host
+    environment:
+      - OLLAMA_HOST=127.0.0.1:11435
+      - OLLAMA_KEEP_ALIVE=30m
+      # One model in VRAM at a time; a second one would be pushed to the CPU
+      - OLLAMA_MAX_LOADED_MODELS=1
+    volumes:
+      - ${VS_OLLAMA_STORE:-ollama}:/root/.ollama/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  models:
+  ollama:
