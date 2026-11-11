@@ -61,9 +61,9 @@ same `Detector` interface, so the node, the tracker and the controller never cha
 
 | Person | GPU | Foundation models | Why this split |
 |---|---|---|---|
-| **Elias** | RTX 3080 Ti Laptop, 16 GB | **Grounding DINO** (main detector) + **SAM 2** (mask refiner, later video tracking) | Heaviest models, needs the VRAM; also runs the live demo |
-| **Philip** | RTX 3050, ~4 GB | **YOLO-World** (+ YOLOE if time) | Real-time open-vocabulary detector that fits 4 GB; baseline for "fast but less precise" |
-| **Jiayi** | to check | **OWLv2** + **Florence-2** | Two different families (CLIP-style vs. generative VLM grounding), good material for the comparison chapter |
+| **Elias** | RTX 3080 Ti Laptop, 16 GB | **Grounding DINO + SAM 2** (main pipeline) + **larger VLMs** (Qwen3-VL-8B, Gemma 4 E4B, GLM-4.6V) | Heaviest models, needs the VRAM; also runs the live demo |
+| **Philip** | RTX 3050, ~4 GB | **small VLMs** (Qwen3-VL-4B, Gemma 4 E2B, 4-bit via Ollama) + **YOLO-World** as fast baseline | VLMs that fit 4 GB; together with Elias' VLMs this gives the size/latency curve |
+| **Jiayi** | weak GPU / CPU | **OWLv2** + **Florence-2** (classic open-vocabulary detectors) | Small enough for CPU; evaluated offline on the recorded image set, so no live sim needed on her laptop |
 
 VLMs as detector (`detector:=vlm`, served by the compose service `ollama`) show the
 latency extreme: the tracker has to carry the loop. First test on a synthetic image (3080 Ti,
@@ -130,6 +130,34 @@ Once `main` is clean (smooth tracking, `/gt/*` topics, FM image), branch off and
   prompt levels above. The weights on Hugging Face are gated: request access early, it may take
   a while or be refused; the experiment is optional.
 Merge into `main` only if it beats the current detector + CSRT pipeline.
+
+#### Result 1: Grounding DINO + SAM 2 tracker (06.11.2026, sim, headless)
+
+`tracker:=sam2` (SAM 2.1 tiny, Ultralytics `SAM2DynamicInteractivePredictor`): memory bank seeded
+with the DINO box, refreshed every 15 frames from its own confident mask, lost when the object
+score drops or the mask collapses/floods. `detect_on_loss:=true` calls DINO only until the first
+track exists and after a loss. Start: `ros2 launch vs_bringup servo.launch.py tracker:=sam2
+detect_on_loss:=true detector_period:=1.0`, then `/ibvs_node/start`.
+
+| | DINO + SAM 2 | DINO + CSRT (1 s period) |
+|---|---|---|
+| Closed loop converged | yes, 30 s (3 runs, 30-42 s) | yes, 40 s |
+| Final feature error norm | 0.004 | 0.003 |
+| Camera over the red box | x 0.600, y 0.000, z 0.356 m | x 0.600, y 0.000, z 0.432 m |
+| Features published (wall clock) | 4.1 Hz | 3.9 Hz |
+| Features per simulated second | 12 | 19 |
+| Detector calls | 2 in 30 s | 24 in 40 s |
+| Cost per tracker frame | 160 ms idle GPU, ~240 ms with Gazebo | ~ms |
+| Mask / orientation angle | yes | box only |
+
+Measured at a real-time factor of 0.2-0.3 (Gazebo, DINO and the tracker share one laptop; DINO
+took 0.9-1.4 s per call instead of the 0.31 s of an idle GPU; camera 4-7 Hz wall, 21 Hz sim),
+so both columns are limited by the camera in wall-clock terms. SAM 2 does not raise the feature
+rate over CSRT: it is launch-bound (about 150 ms per frame at 512 as well as 1024 px, bf16 does
+not help), so the node feeds it only the newest frame. Its gain is robustness (detector runs
+twice instead of 24 times) and the mask (centroid, area, angle). Not tested yet: occlusion and
+the clutter world. The mask prompt path of Ultralytics 8.4.203 `update_memory` is broken, so
+the memory refresh prompts with the mask's box.
 
 ## Work split beyond the FMs
 

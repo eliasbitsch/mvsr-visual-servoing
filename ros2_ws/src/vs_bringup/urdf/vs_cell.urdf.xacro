@@ -30,7 +30,8 @@
   <xacro:sensor_d435 parent="tool0" name="camera" use_nominal_extrinsics="true">
     <origin xyz="0.0 -0.075 0.03" rpy="0 ${-pi/2} 0"/>
   </xacro:sensor_d435>
-  <xacro:d435_gazebo frame="camera_color_frame" optical_frame="camera_color_optical_frame"/>
+  <!-- 15 Hz: perception consumes well under that; 30 Hz doubled the rendering load -->
+  <xacro:d435_gazebo frame="camera_color_frame" optical_frame="camera_color_optical_frame" rate="15"/>
 
   <ros2_control name="GazeboSimSystem" type="system">
     <hardware>
