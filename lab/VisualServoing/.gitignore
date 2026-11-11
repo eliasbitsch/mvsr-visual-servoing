@@ -1,0 +1,8 @@
+student_ws/build/
+student_ws/install/
+student_ws/log/
+data/*
+!data/.gitkeep
+__pycache__/
+*.pyc
+.pytest_cache/

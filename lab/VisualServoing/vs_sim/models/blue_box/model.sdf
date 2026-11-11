@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <model name="blue_box">
+    <static>true</static>
+    <link name="link">
+      <collision name="collision">
+        <pose>0 0 0.025 0 0 0</pose>
+        <geometry><box><size>0.08 0.06 0.05</size></box></geometry>
+      </collision>
+      <visual name="visual">
+        <pose>0 0 0.025 0 0 0</pose>
+        <geometry><box><size>0.08 0.06 0.05</size></box></geometry>
+        <material>
+          <ambient>0.1 0.2 0.85 1</ambient>
+          <diffuse>0.1 0.2 0.85 1</diffuse>
+          <specular>0.3 0.3 0.3 1</specular>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

@@ -1,0 +1,80 @@
+<?xml version="1.0"?>
+<!--
+  Wrist camera (eye-in-hand) for the UR robot.
+
+  Frames:
+    camera_link            x = viewing direction, z = up (Gazebo convention)
+    camera_optical_frame   z = viewing direction, x = right, y = down (ROS optical convention)
+
+  Topics (bridged to ROS 2):
+    /camera/image_raw      sensor_msgs/Image
+    /camera/camera_info    sensor_msgs/CameraInfo
+-->
+<robot xmlns:xacro="http://wiki.ros.org/xacro">
+  <xacro:macro name="wrist_camera" params="parent tf_prefix:='' *origin
+                                           hfov:=1.0472 width:=640 height:=480 rate:=30 noise_stddev:=0.005">
+
+    <joint name="${tf_prefix}camera_mount_joint" type="fixed">
+      <xacro:insert_block name="origin"/>
+      <parent link="${tf_prefix}${parent}"/>
+      <child link="${tf_prefix}camera_link"/>
+    </joint>
+
+    <link name="${tf_prefix}camera_link">
+      <visual>
+        <origin xyz="-0.015 0 0" rpy="0 0 0"/>
+        <geometry><box size="0.03 0.07 0.025"/></geometry>
+        <material name="camera_black"><color rgba="0.1 0.1 0.1 1"/></material>
+      </visual>
+      <visual>
+        <origin xyz="0.002 0 0" rpy="0 ${pi/2} 0"/>
+        <geometry><cylinder radius="0.008" length="0.006"/></geometry>
+        <material name="lens_grey"><color rgba="0.3 0.3 0.35 1"/></material>
+      </visual>
+      <collision>
+        <origin xyz="-0.015 0 0" rpy="0 0 0"/>
+        <geometry><box size="0.03 0.07 0.025"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="0.05"/>
+        <origin xyz="-0.015 0 0" rpy="0 0 0"/>
+        <inertia ixx="2.3e-5" ixy="0" ixz="0" iyy="6.4e-6" iyz="0" izz="2.4e-5"/>
+      </inertial>
+    </link>
+
+    <joint name="${tf_prefix}camera_optical_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+      <parent link="${tf_prefix}camera_link"/>
+      <child link="${tf_prefix}camera_optical_frame"/>
+    </joint>
+    <link name="${tf_prefix}camera_optical_frame"/>
+
+    <gazebo reference="${tf_prefix}camera_link">
+      <sensor name="wrist_camera" type="camera">
+        <always_on>true</always_on>
+        <update_rate>${rate}</update_rate>
+        <visualize>true</visualize>
+        <topic>/camera/image_raw</topic>
+        <gz_frame_id>${tf_prefix}camera_optical_frame</gz_frame_id>
+        <camera name="wrist_camera">
+          <camera_info_topic>/camera/camera_info</camera_info_topic>
+          <horizontal_fov>${hfov}</horizontal_fov>
+          <image>
+            <width>${width}</width>
+            <height>${height}</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.01</near>
+            <far>10.0</far>
+          </clip>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>${noise_stddev}</stddev>
+          </noise>
+        </camera>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+</robot>
