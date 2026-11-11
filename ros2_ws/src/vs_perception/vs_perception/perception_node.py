@@ -26,6 +26,9 @@ from vs_perception.refiners import REFINERS
 from vs_perception.trackers import TRACKERS, NoTracker
 
 
+cv2.setNumThreads(2)  # default pool = all cores, mostly spinning; CSRT does not need more
+
+
 class PerceptionNode(Node):
 
     def __init__(self):

@@ -1,0 +1,53 @@
+# Lecturer's UR5e simulation (lab/VisualServoing). RGB only, no depth camera.
+#   ros2 launch vs_bringup servo.launch.py sim:=false params:=lab prompt:="red can"
+perception_node:
+  ros__parameters:
+    use_sim_time: true
+    image_topic: /camera/image_raw
+    device: cuda
+    score_threshold: 0.3
+    max_missed_detections: 3
+    frame_buffer_size: 150
+    publish_debug_image: true
+
+ibvs_node:
+  ros__parameters:
+    use_sim_time: true
+    camera_info_topic: /camera/camera_info
+    depth_topic: /camera/depth_unused
+    base_frame: base_link
+    ee_frame: tool0
+    camera_frame: camera_optical_frame
+    arm_joints: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint,
+                 wrist_1_joint, wrist_2_joint, wrist_3_joint]
+    command_topic: /forward_velocity_controller/commands
+    velocity_controller: forward_velocity_controller
+    position_controller: scaled_joint_trajectory_controller
+    rate: 50.0
+
+    gain: 0.6
+    desired_u: -1.0
+    desired_v: -1.0
+    desired_area: 9000.0
+    desired_angle: 0.0
+    # Reference distance camera -> target top given by the assignment (targets.yaml)
+    desired_depth: 0.30
+    control_yaw: false
+    align_optical_axis_down: true
+    align_gain: 1.0
+
+    max_linear_speed: 0.10
+    max_angular_speed: 0.5
+    joint_speed_scale: 0.5
+    joint_limit_margin: 0.1
+    dls_damping: 0.05
+    feature_timeout: 0.5
+    converged_threshold: 0.01
+    converged_hold_time: 1.0
+
+    collision_margin: 0.01
+    safety_lookahead: 0.2
+    min_height: 0.03
+    height_frames: [tool0, camera_link]
+    # tool0 in base_link: x_min, y_min, z_min, x_max, y_max, z_max [m]
+    workspace: [0.1, -0.8, 0.0, 0.9, 0.8, 1.2]
