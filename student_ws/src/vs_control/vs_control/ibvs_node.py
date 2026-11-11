@@ -4,6 +4,8 @@ Safety: the arm stops (zero joint velocities) whenever features are missing, inv
 than feature_timeout, and whenever SafetyMonitor predicts self-collision or leaving the
 workspace. The ground-truth topics /ground_truth/* are never used here.
 """
+import signal
+
 import numpy as np
 import pinocchio as pin
 import rclpy
@@ -11,6 +13,7 @@ from controller_manager_msgs.srv import SwitchController
 from geometry_msgs.msg import TwistStamped
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
+from rclpy.signals import SignalHandlerOptions
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from rclpy.time import Time
 from sensor_msgs.msg import CameraInfo, JointState
@@ -253,13 +256,19 @@ class IbvsNode(Node):
 
 
 def main():
-    rclpy.init()
+    # Own signal handling: the lab's forward_velocity_controller keeps the last command forever,
+    # so the node must send zero velocities while ROS is still up, before rclpy shuts down.
+    rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     node = IbvsNode()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+    stopping = []
+
+    def stop(*_):
+        node.publish_joint_velocities(np.zeros(len(node.p['arm_joints'])))
+        stopping.append(True)
+
+    signal.signal(signal.SIGINT, stop)
+    signal.signal(signal.SIGTERM, stop)
+    while not stopping and rclpy.ok():
+        rclpy.spin_once(node, timeout_sec=0.1)
+    node.destroy_node()
+    rclpy.try_shutdown()
