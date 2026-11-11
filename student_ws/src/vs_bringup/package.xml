@@ -11,6 +11,9 @@
   <exec_depend>vs_perception</exec_depend>
   <exec_depend>vs_control</exec_depend>
   <exec_depend>foxglove_bridge</exec_depend>
+  <exec_depend>rosgraph_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>vs_sim</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

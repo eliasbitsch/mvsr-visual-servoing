@@ -16,7 +16,7 @@ from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.time import Time
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CompressedImage, Image
 from vs_interfaces.msg import ObjectFeatures
 
 from vs_perception import features
@@ -79,6 +79,8 @@ class PerceptionNode(Node):
 
         self.pub = self.create_publisher(ObjectFeatures, '/vs/features', 10)
         self.debug_pub = self.create_publisher(Image, '/vs/debug_image', 2)
+        # JPEG copy for the web GUI: the raw image is ~9 MB/s, which the browser decodes slowly
+        self.debug_jpeg_pub = self.create_publisher(CompressedImage, '/vs/debug_image/compressed', 2)
         # A slow tracker would otherwise work through a backlog of stale frames
         qos = qos_profile_sensor_data
         if self.tracker.slow:
@@ -209,8 +211,18 @@ class PerceptionNode(Node):
         out.detector_latency = self.latency
         self.pub.publish(out)
 
-        if self.debug and self.debug_pub.get_subscription_count() > 0:
-            self.debug_pub.publish(from_rgb(self.draw(img, out), msg.header))
+        raw_subs = self.debug_pub.get_subscription_count()
+        jpeg_subs = self.debug_jpeg_pub.get_subscription_count()
+        if self.debug and (raw_subs or jpeg_subs):
+            vis = self.draw(img, out)
+            if raw_subs:
+                self.debug_pub.publish(from_rgb(vis, msg.header))
+            if jpeg_subs:
+                ok, jpg = cv2.imencode('.jpg', cv2.cvtColor(vis, cv2.COLOR_RGB2BGR),
+                                       [cv2.IMWRITE_JPEG_QUALITY, 85])
+                if ok:
+                    self.debug_jpeg_pub.publish(CompressedImage(header=msg.header, format='jpeg',
+                                                                data=jpg.tobytes()))
 
     def draw(self, img, f):
         vis = img.copy()

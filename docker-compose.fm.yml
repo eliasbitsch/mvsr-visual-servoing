@@ -21,7 +21,10 @@ services:
       - ./student_ws:/ws/student
       - ./data:/root/vs_data
       - models:/models
-    command: ["bash", "-lc", "cd /ws/student && colcon build --symlink-install && source install/setup.bash && ros2 launch vs_bringup servo.launch.py"]
+    command: ["bash", "-lc", "cd /ws/student && colcon build --symlink-install && source install/setup.bash && exec ros2 launch vs_bringup servo.launch.py"]
+    # ros2 launch only reacts to SIGINT; with SIGTERM docker kills it after 10 s, the IBVS node never
+    # sends its zero command and the velocity controller keeps moving the arm
+    stop_signal: SIGINT
 
   fm-nvidia:
     extends: fm
@@ -50,15 +53,24 @@ services:
       - -lc
       - >-
         until [ -f /ws/student/install/vs_bringup/share/vs_bringup/launch/viz.launch.py ]; do sleep 2; done;
-        source /ws/student/install/setup.bash && ros2 launch vs_bringup viz.launch.py
+        source /ws/student/install/setup.bash && exec ros2 launch vs_bringup viz.launch.py
+    stop_signal: SIGINT
 
   # Web GUI: http://localhost:8081/?ds=foxglove-websocket&ds.url=ws://localhost:8766
   lichtblick:
     image: ghcr.io/lichtblick-suite/lichtblick:1.30.0
     network_mode: host
-    command: ["caddy", "file-server", "--listen", ":8081"]
+    # Loads docker/lichtblick-dark.js before the app (once per container) for the dark default
+    command:
+      - sh
+      - -c
+      - >-
+        grep -q vs-dark.js index.html ||
+        sed -i 's#<script defer=#<script src="vs-dark.js"></script><script defer=#' index.html;
+        exec caddy file-server --listen :8081
     volumes:
       - ./docker/lichtblick-layout.json:/lichtblick/default-layout.json:ro
+      - ./docker/lichtblick-dark.js:/src/vs-dark.js:ro
 
   # VLM server for detector:=vlm. Port 11435 so it does not clash with an Ollama on the host.
   ollama:
