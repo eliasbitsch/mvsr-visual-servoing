@@ -33,7 +33,8 @@ ibvs_node:
     desired_angle: 0.0
     # Reference distance camera -> target top given by the assignment (targets.yaml)
     desired_depth: 0.30
-    control_yaw: false
+    # Only takes effect with a mask (tracker:=sam2) of an elongated object, see features.py
+    control_yaw: true
     align_optical_axis_down: true
     align_gain: 1.0
 

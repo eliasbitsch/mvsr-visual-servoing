@@ -37,7 +37,7 @@ PARAMS = {
     'position_controller': 'scaled_joint_trajectory_controller',
     'rate': 50.0, 'gain': 0.6,
     'desired_u': -1.0, 'desired_v': -1.0, 'desired_area': 9000.0, 'desired_angle': 0.0,
-    'desired_depth': 0.30, 'control_yaw': False,
+    'desired_depth': 0.30, 'control_yaw': True,
     'align_optical_axis_down': True, 'align_gain': 1.0,
     'max_linear_speed': 0.10, 'max_angular_speed': 0.5, 'joint_speed_scale': 0.5,
     'joint_limit_margin': 0.1, 'dls_damping': 0.05, 'feature_timeout': 0.5,
@@ -67,6 +67,8 @@ class IbvsNode(Node):
         self.safety = None
         self.active = False
         self.converged_since = None
+        # Yaw is only servoed if the reference view had a defined principal axis too
+        self.desired_angle_valid = False
 
         self.tf = Buffer()
         TransformListener(self.tf, self)
@@ -161,9 +163,11 @@ class IbvsNode(Node):
             response.success, response.message = False, 'no valid target in view'
             return response
         self.p.update(desired_u=f.u, desired_v=f.v, desired_area=f.area, desired_angle=f.angle)
+        self.desired_angle_valid = f.angle_valid
         response.success = True
         response.message = (f'reference u={f.u:.1f} v={f.v:.1f} area={f.area:.0f} '
-                            f'angle={f.angle:.2f}')
+                            f'angle={f.angle:.2f} ' +
+                            ('(yaw servoed)' if f.angle_valid else '(no defined axis, yaw not servoed)'))
         self.get_logger().info(response.message)
         return response
 
@@ -207,7 +211,8 @@ class IbvsNode(Node):
                                      p['desired_area'], p['desired_depth'])
         s_star = ibvs.normalised_features(u_star, v_star, p['desired_area'], p['desired_angle'],
                                           self.K, p['desired_area'], p['desired_depth'])
-        v_cam, e = ibvs.control_law(s, s_star, p['gain'], p['control_yaw'])
+        control_yaw = p['control_yaw'] and f.angle_valid and self.desired_angle_valid
+        v_cam, e = ibvs.control_law(s, s_star, p['gain'], control_yaw)
 
         R_bc, _ = transform_to_rp(T_bc)
         if p['align_optical_axis_down']:

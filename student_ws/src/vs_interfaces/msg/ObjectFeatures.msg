@@ -11,6 +11,8 @@ float64 v
 float64 area
 # Orientation of the object's principal axis in the image [rad], 0 if only a box is known
 float64 angle
+# False if the angle carries no information (box only, or a round or square mask)
+bool angle_valid
 # Axis-aligned box: x_min, y_min, x_max, y_max
 float64[4] bbox
 float32 score

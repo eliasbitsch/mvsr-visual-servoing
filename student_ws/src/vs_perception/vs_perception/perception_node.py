@@ -203,6 +203,7 @@ class PerceptionNode(Node):
             f = f or features.from_box(box)
             out.valid = True
             out.u, out.v, out.area, out.angle = f.u, f.v, f.area, f.angle
+            out.angle_valid = f.angle_valid
             out.bbox = [float(x) for x in box]
             out.score = self.score
         if self.det_stamp is not None:
