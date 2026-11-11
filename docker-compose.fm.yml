@@ -51,7 +51,6 @@ services:
       - >-
         until [ -f /ws/student/install/vs_bringup/share/vs_bringup/launch/viz.launch.py ]; do sleep 2; done;
         source /ws/student/install/setup.bash && ros2 launch vs_bringup viz.launch.py
-    restart: unless-stopped
 
   # Web GUI: http://localhost:8081/?ds=foxglove-websocket&ds.url=ws://localhost:8766
   lichtblick:
@@ -60,7 +59,6 @@ services:
     command: ["caddy", "file-server", "--listen", ":8081"]
     volumes:
       - ./docker/lichtblick-layout.json:/lichtblick/default-layout.json:ro
-    restart: unless-stopped
 
   # VLM server for detector:=vlm. Port 11435 so it does not clash with an Ollama on the host.
   ollama:
