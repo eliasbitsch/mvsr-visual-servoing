@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <model name="green_cup">
+    <static>true</static>
+    <link name="link">
+      <collision name="collision">
+        <pose>0 0 0.045 0 0 0</pose>
+        <geometry><cylinder><radius>0.04</radius><length>0.09</length></cylinder></geometry>
+      </collision>
+      <visual name="visual">
+        <pose>0 0 0.045 0 0 0</pose>
+        <geometry><cylinder><radius>0.04</radius><length>0.09</length></cylinder></geometry>
+        <material>
+          <ambient>0.1 0.65 0.15 1</ambient>
+          <diffuse>0.1 0.65 0.15 1</diffuse>
+          <specular>0.3 0.3 0.3 1</specular>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

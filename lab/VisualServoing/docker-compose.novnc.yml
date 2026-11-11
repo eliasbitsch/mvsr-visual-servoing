@@ -1,0 +1,30 @@
+# Windows / macOS (or Linux without X11): GUI in the browser.
+#   docker compose -f docker-compose.novnc.yml up -d novnc
+#   docker compose -f docker-compose.novnc.yml run --rm sim
+#   -> open http://localhost:8080/vnc.html
+# Rendering runs on the CPU (software OpenGL): expect a lower frame rate.
+services:
+  novnc:
+    image: theasp/novnc:latest
+    environment:
+      - DISPLAY_WIDTH=1920
+      - DISPLAY_HEIGHT=1080
+      - RUN_XTERM=no
+    ports:
+      - "8080:8080"
+
+  sim:
+    build: .
+    image: vs-sim:jazzy
+    ipc: host
+    stdin_open: true
+    tty: true
+    depends_on:
+      - novnc
+    environment:
+      - DISPLAY=novnc:0.0
+      - LIBGL_ALWAYS_SOFTWARE=1
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - ./student_ws:/ws/student
+      - ./data:/root/vs_data
