@@ -51,4 +51,8 @@ def generate_launch_description():
                                   'detect_on_loss': arg('detect_on_loss')}]),
         Node(package='vs_control', executable='ibvs_node', output='screen',
              parameters=[params, {'auto_start': arg('auto_start')}]),
+        # Typed commands on /vs/command ("fahre über die rote Dose"); type them with
+        # `ros2 run vs_perception vs_cmd`
+        Node(package='vs_perception', executable='command_node', output='screen',
+             parameters=[params]),
     ])
