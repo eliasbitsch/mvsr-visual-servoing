@@ -20,6 +20,8 @@ setup(
         'console_scripts': [
             'perception_node = vs_perception.perception_node:main',
             'detect_image = vs_perception.detect_image:main',
+            'command_node = vs_perception.command_node:main',
+            'vs_cmd = vs_perception.command_node:console',
         ],
     },
 )
