@@ -16,6 +16,27 @@ Since 11.11.2026 we use the lecturer's lab simulation unchanged (repo root: `Doc
 gone. FM targets: `red_can`, `blue_box`, `green_cup`, `yellow_ball`; eight start configurations per
 target via `go_to_start`; ground truth on `/ground_truth/*` for the evaluation only.
 
+## Status (11.11.2026)
+
+Working in the lab simulation, measured against `/ground_truth/pose_error`:
+
+| Run | Converged | Position error | Rotation error |
+|---|---|---|---|
+| red_can S1, DINO + CSRT | 6.6 s | 1.6 mm | 0.02 deg |
+| blue_box S3 (-35 deg), DINO + SAM 2, yaw servoed | 8.1 s | 1.4 mm | 0.05 deg |
+| red_can S3, DINO + SAM 2 | 8.3 s | 3.0 mm | 35 deg, round from above, no yaw observable |
+| blue_box S7 (170 deg), DINO + SAM 2 | 11.9 s | 0.4 mm | 180 deg, symmetric shape, view identical to reference |
+
+- Workflow: `go_to_start --reference`, `capture_reference`, `go_to_start --start N`, `start`.
+- Web GUI (Lichtblick, port 8081) with 3D robot and objects, camera, live plots, service buttons;
+  the simulation runs headless.
+- Load: about 7.3 of 20 threads headless (our nodes ignore the ~500 Hz `/clock`, control 30 Hz,
+  camera 15 Hz). The Gazebo window costs another ~1.4 cores.
+- Safety: stopping the stack sends zero joint velocities (the lab's velocity controller keeps the
+  last command otherwise).
+- Open findings: yaw needs a mask with a defined axis (SAM 2); with the can out of view DINO tracked
+  the ArUco board as "red can" (false positive, needs a plausibility check).
+
 ## Architecture
 
 ```
@@ -110,6 +131,25 @@ So that the numbers are comparable, every FM owner reports on the **same recorde
 5. Closed-loop: servoing success rate and convergence time with detector periods
    0.2 s / 1 s / 5 s, with and without tracker.
 
+### Evaluation metrics (spec section 2.5)
+
+The runner (to do, Jiayi with Elias) drives every target x start configuration automatically and
+uses the ground truth only for the numbers. Proposed definitions, to confirm in the team:
+
+| Metric | Definition |
+|---|---|
+| Success | converged within 60 s and final camera pose within 5 mm and 2 deg of the reference pose; for round objects (can, ball) the yaw is excluded, for rectangles taken modulo 180 deg |
+| Final pose error | translation and rotation of `/ground_truth/pose_error` at the end of the run |
+| Final feature error | norm of `/ibvs_node/error` at the end |
+| Convergence time | from `start` until the feature error stays below the threshold for 1 s |
+| Time series | feature error and commanded camera velocity over time (`/ibvs_node/error`, `/ibvs_node/camera_twist`) |
+| Trajectories | camera path in Cartesian space (`/ground_truth/camera_pose`) and feature path in the image (`/vs/features`) |
+
+Critical analysis required by the spec: which start configurations converge reliably, robustness
+to partial occlusion, lighting changes and larger distances (S4), failure cases (target lost from
+view, joint limits, singularities, S7), and the limits of the approach (symmetric objects, false
+positives, FM latency).
+
 ### Own pipeline experiment (Elias)
 
 Merged into `main` on 11.11.2026; still to repeat in the lab simulation:
@@ -176,10 +216,10 @@ demo.
 
 | When | Done means |
 |---|---|
-| Online session 1 | Container builds on all three laptops, sim runs, camera image visible, robot moves with a trajectory command. Each person has their FM detecting objects on saved sim images. |
-| Online session 2 | Closed loop works with Grounding DINO + tracker for x/y/z/yaw from one start pose. Other FMs plugged into the node. Evaluation runner can reset the robot and run one trial automatically. |
-| Online session 3 | All start configurations evaluated, FM comparison table, latency study, failure cases collected. Slides draft. |
-| Day before presentation | Zip submitted (code, README, slides, demo video), clean install tested on a fresh machine from the README alone. |
+| Online session 1 (11.11.) | Lab sim runs, camera image visible, robot moves. Done, plus the closed loop on red_can. Open: each person's FM on saved sim images. |
+| Online session 2 (17.11.) | Closed loop with Grounding DINO + tracker for x/y/z/yaw from one start pose (done). Other FMs plugged into the node (Florence-2, small VLMs missing). Evaluation runner runs one trial automatically. |
+| Online session 3 (01.12.) | All start configurations evaluated, FM comparison table, latency study, failure cases collected. Slides draft. |
+| 09.12. 23:59 (presentation 10.12.) | Zip submitted (code, README, slides, demo video), clean install tested on a fresh machine from the README alone. |
 
 ## How to add a foundation model
 

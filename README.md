@@ -71,12 +71,13 @@ docker compose up -d foxglove lichtblick     # bridge on ws://localhost:8766, GU
 ```
 
 Then open <http://localhost:8081/?ds=foxglove-websocket&ds.url=ws://localhost:8766>. The layout
-(`docker/lichtblick-layout.json`) loads by default: the UR5e in 3D, the camera with the detection,
-plots of the image feature error, the ground-truth pose error and the commanded camera velocity, a
-converged timeline, and buttons for *Capture reference*, *Start servoing* and *Stop*. With the GUI
-the simulation can run with `gazebo_gui:=false`. If an older layout shows up, delete the stored
-layout in Lichtblick (Layouts tab) and reload. The bridge waits until the `fm` service has built
-`student_ws`, so start `fm` first.
+(`docker/lichtblick-layout.json`) loads by default, in dark mode: the UR5e and the objects of the
+lab world in 3D, the camera with the detection, plots of the image feature error, the ground-truth
+pose error and the commanded camera velocity, a converged timeline, and buttons for *Capture
+reference*, *Start servoing* and *Stop*. With the GUI the simulation can run with
+`gazebo_gui:=false`. If an older layout shows up, delete the stored layout in Lichtblick (Layouts
+tab) and reload. The bridge waits until the `fm` service has built `student_ws`, so start `fm`
+first. Stop the GUI with `docker compose stop foxglove lichtblick`; nothing here starts on its own.
 
 `camera_rate:=15` is enough for our perception (it handles about 12 frames per second) and halves
 the rendering load. Add `gazebo_gui:=false` while working on the controller: the Gazebo window
@@ -85,6 +86,17 @@ alone costs about 1.4 CPU cores, the camera view still opens.
 Under WSL keep the terminals open: WSL shuts its VM down when no WSL session is left, and the
 containers then exit with code 255.
 
+Stopping `fm` (Ctrl+C or `docker compose stop`) also stops the arm: the IBVS node sends zero joint
+velocities on shutdown, since the lab's velocity controller would keep the last command.
+
+### Detectors, trackers and yaw
+
+The rotation about the optical axis is servoed only with a mask that has a defined principal
+axis: use `tracker:=sam2` (CSRT gives a box without angle). Round objects (can, ball) look the
+same under any rotation, so their yaw stays as it started; the answer of *Capture reference* says
+whether yaw is servoed. A rectangle that is 180 deg off looks identical to the reference (start
+configuration S7), so that ambiguity remains.
+
 Other prompts and detectors go after the service name, for example
 `docker compose run --rm fm ros2 launch vs_bringup servo.launch.py detector:=owlv2 prompt:="blue box"`.
 
@@ -92,7 +104,7 @@ Other prompts and detectors go after the service name, for example
 |---|---|---|
 | `detector` | `grounding_dino` | `grounding_dino`, `owlv2`, `yolo_world`, `vlm` |
 | `prompt` | `red can` | any text; FM targets in the world: red can, blue box, green cup, yellow ball |
-| `tracker` | `csrt` | `csrt`, `kcf`, `sam2`, `none` |
+| `tracker` | `csrt` | `csrt`, `kcf`, `sam2` (mask, needed for yaw), `none` |
 | `refiner` | `none` | `none`, `sam2` |
 | `detector_period` | `1.0` | seconds between foundation model calls |
 | `detect_on_loss` | `false` | `true` runs the detector only while no track exists (use with `tracker:=sam2`) |

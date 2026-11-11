@@ -9,7 +9,9 @@ def generate_launch_description():
         # The clock is remapped to the 30 Hz copy, else the browser redraws ~500 times a second.
         Node(package='foxglove_bridge', executable='foxglove_bridge', output='screen',
              # 8766, not the usual 8765: that port is often taken by other local tools
-             parameters=[{'port': 8766, 'use_sim_time': True}],
+             # /ground_truth/model_poses: 42 unnamed transforms per message, nothing to show
+             parameters=[{'port': 8766, 'use_sim_time': True,
+                          'topic_whitelist': ['^(?!/ground_truth/model_poses$).*']}],
              remappings=[('/clock', '/vs/clock_viz')]),
         Node(package='vs_bringup', executable='viz_relay.py', output='screen'),
     ])
