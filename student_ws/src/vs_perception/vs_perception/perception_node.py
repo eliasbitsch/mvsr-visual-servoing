@@ -95,10 +95,12 @@ class PerceptionNode(Node):
 
     def on_params(self, changes):
         for c in changes:
-            if c.name == 'prompt' and c.value != self.prompt:
+            if c.name == 'prompt':
+                # Also for the same prompt: setting it starts a fresh detection in the current
+                # view (the evaluation sets it after every move, so no track carries over)
                 self.prompt = c.value
                 self.track_box = None
-                self.get_logger().info(f'new prompt "{self.prompt}"')
+                self.get_logger().info(f'prompt "{self.prompt}", new detection')
             elif c.name == 'detector_period':
                 self.period = c.value
             elif c.name == 'detector_delay':

@@ -142,6 +142,7 @@ class Recorder(Node):
         self.feat = self.gt = self.cam = self.twist = self.err = self.image = self.K = None
         self.target_pose = None
         self.err_fresh = False
+        self.err_time = 0.0
         self.converged = False
         self.clock_seen = 0.0
         self.rows = None
@@ -179,7 +180,7 @@ class Recorder(Node):
             self.detections += 1
 
     def on_error(self, m):
-        self.err, self.err_fresh = list(m.data), True
+        self.err, self.err_fresh, self.err_time = list(m.data), True, time.monotonic()
 
     def sample(self):
         if self.rows is None:
@@ -306,6 +307,8 @@ def run_one(rec, symmetry, args, target_cfg):
             break
         if rec.feat is not None and not rec.feat.valid and elapsed > 2.0:
             break
+        if elapsed > 2.0 and time.monotonic() - rec.err_time > 2.0:
+            break  # the controller ended the run (target lost), even if perception re-detects
     rec.spin_for(0.5)  # a few rows in the final pose
     rec.call('stop')
     rows, rec.rows = rec.rows, None
@@ -323,7 +326,7 @@ def run_one(rec, symmetry, args, target_cfg):
     feat_err = (math.sqrt(sum(x * x for x in last[9:13] if not math.isnan(x))) if last else math.nan)
     if conv_time is not None:
         outcome = 'converged'
-    elif rec.feat is not None and not rec.feat.valid:
+    elif (rec.feat is not None and not rec.feat.valid) or time.monotonic() - rec.err_time > 2.0:
         outcome = 'target lost'
     else:
         outcome = 'timeout'
@@ -356,12 +359,18 @@ def main():
     ap.add_argument('--lose-target-after', type=float,
                     help='move the target out of view after this many seconds (safe stop test)')
     ap.add_argument('--label', default='run', help='name part of the output folder')
+    ap.add_argument('--resume', help='output folder of an interrupted run: append, skip done runs')
     ap.add_argument('--out', default='/root/vs_data/eval')
     args = ap.parse_args()
 
-    out = os.path.join(args.out, time.strftime('%Y%m%d_%H%M%S') + '_' + args.label)
+    out = args.resume or os.path.join(args.out, time.strftime('%Y%m%d_%H%M%S') + '_' + args.label)
     for sub in ('runs', 'images'):
-        os.makedirs(os.path.join(out, sub))
+        os.makedirs(os.path.join(out, sub), exist_ok=True)
+    summary_path = os.path.join(out, 'summary.csv')
+    done = set()
+    if os.path.exists(summary_path):
+        with open(summary_path) as fh:
+            done = {(r['target'], int(r['start'])) for r in csv.DictReader(fh)}
 
     rclpy.init()
     mover, rec = RobotMover(), Recorder()
@@ -388,16 +397,22 @@ def main():
              'occlusion': args.occlusion, 'light': args.light}
 
     try:
-        with open(os.path.join(out, 'summary.csv'), 'w', newline='') as fh:
+        with open(summary_path, 'a', newline='') as fh:
             summary = csv.DictWriter(fh, SUMMARY_FIELDS)
-            summary.writeheader()
+            if not done:
+                summary.writeheader()
             for target in args.targets:
+                todo = [s for s in args.starts if (target, s) not in done]
+                if not todo:
+                    continue
                 prompt, symmetry = TARGETS[target]
                 target_cfg = mover.cfg['targets'][target]
                 rec.call('stop')
-                configure_perception(prompt)
                 rec.check_sim_clock()
                 mover.go_to(target, start=None)
+                # Prompt only after the move: detecting in the old view picked another object
+                # (green cup -> yellow ball) and the tracker kept it all the way
+                configure_perception(prompt)
                 rec.save_view(os.path.join(out, 'images'), f'{target}_reference', target)
                 if (not rec.wait_target(prompt, 30.0)
                         or not rec.call('capture_reference').success):
@@ -407,10 +422,10 @@ def main():
                     spawn_occluder(target_cfg, args.occlusion)
                 if args.light != 1.0:
                     set_light(args.light)
-                for start in args.starts:
+                for start in todo:
                     rec.check_sim_clock()
-                    configure_perception(prompt)
                     mover.go_to(target, start=start)
+                    configure_perception(prompt)
                     rec.save_view(os.path.join(out, 'images'), f'{target}_S{start}', target)
                     row = {'target': target, 'start': start, **fixed}
                     if not rec.wait_target(prompt, 40.0):
