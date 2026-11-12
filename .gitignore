@@ -12,3 +12,5 @@ moodle/
 # macOS metadata (created on external / non-APFS drives)
 **/._*
 **/.DS_Store
+notebooks/figures/
+notebooks/.ipynb_checkpoints/
