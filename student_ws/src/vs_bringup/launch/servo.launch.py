@@ -28,8 +28,12 @@ def generate_launch_description():
                               description='Start servoing as soon as the target is seen'),
 
         # Perception needs the venv interpreter (numpy 2, OpenCV 4.12, PyTorch), see Dockerfile.fm
+        # respawn: a sporadic CUDA kernel fault (seen on the 3080 Ti) kills the process for good;
+        # restarting it costs ~20 s of model loading instead of the rest of an evaluation.
+        # Limited, since a fault that persists would otherwise reload the models forever.
         Node(package='vs_perception', executable='perception_node', output='screen',
-             prefix=os.environ.get('VS_PYTHON', ''),
+             prefix=os.environ.get('VS_PYTHON', ''), respawn=True, respawn_delay=5.0,
+             respawn_max_retries=3,
              # Thread pools default to one thread per core and spin while idle (~4 cores
              # burnt on a 20-thread laptop); the heavy work runs on the GPU anyway.
              additional_env={'OMP_NUM_THREADS': '2', 'MKL_NUM_THREADS': '2',

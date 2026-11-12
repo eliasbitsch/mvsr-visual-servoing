@@ -220,7 +220,7 @@ class Recorder(Node):
 
     def set_param(self, name, value, node='perception'):
         cli = self.set_cli if node == 'perception' else self.ibvs_set_cli
-        if not cli.wait_for_service(timeout_sec=10.0):
+        if not cli.wait_for_service(timeout_sec=60.0):  # perception may be respawning
             raise RuntimeError(f'{node} set_parameters not available')
         pv = (ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=value)
               if isinstance(value, str) else
@@ -366,10 +366,17 @@ def main():
     rclpy.init()
     mover, rec = RobotMover(), Recorder()
     mover.ready()
-    if args.detector_period is not None:
-        rec.set_param('detector_period', args.detector_period)
-    if args.detector_delay is not None:
-        rec.set_param('detector_delay', args.detector_delay)
+
+    def configure_perception(prompt=None):
+        # Re-applied before every run: a respawned perception node starts with its defaults
+        if prompt is not None:
+            rec.set_param('prompt', prompt)
+        if args.detector_period is not None:
+            rec.set_param('detector_period', args.detector_period)
+        if args.detector_delay is not None:
+            rec.set_param('detector_delay', args.detector_delay)
+
+    configure_perception()
     if args.feature_timeout is not None:
         rec.set_param('feature_timeout', args.feature_timeout, node='ibvs')
     params = rec.perception_params()
@@ -388,7 +395,7 @@ def main():
                 prompt, symmetry = TARGETS[target]
                 target_cfg = mover.cfg['targets'][target]
                 rec.call('stop')
-                rec.set_param('prompt', prompt)
+                configure_perception(prompt)
                 rec.check_sim_clock()
                 mover.go_to(target, start=None)
                 rec.save_view(os.path.join(out, 'images'), f'{target}_reference', target)
@@ -402,10 +409,11 @@ def main():
                     set_light(args.light)
                 for start in args.starts:
                     rec.check_sim_clock()
+                    configure_perception(prompt)
                     mover.go_to(target, start=start)
                     rec.save_view(os.path.join(out, 'images'), f'{target}_S{start}', target)
                     row = {'target': target, 'start': start, **fixed}
-                    if not rec.wait_target(prompt, 20.0):
+                    if not rec.wait_target(prompt, 40.0):
                         row.update(success=0, converged=0, outcome='not detected')
                         rows = []
                     else:

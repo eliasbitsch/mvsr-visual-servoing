@@ -1,6 +1,14 @@
 # Our stack (FM perception + IBVS) next to the lab simulation from docker-compose.yml.
 # Image: docker/Dockerfile.fm on top of vs-sim:jazzy. Usage and GPU variants: README.md.
 services:
+  # Memory caps: a runaway (e.g. a perception node reloading its models after repeated CUDA
+  # faults) then stops one container instead of filling the host RAM. Applies to the lab's sim
+  # service too, without editing its compose file.
+  sim:
+    mem_limit: 6g
+  sim-nvidia:
+    mem_limit: 6g
+
   fm:
     build:
       context: .
@@ -22,6 +30,7 @@ services:
       - ./data:/root/vs_data
       - models:/models
     command: ["bash", "-lc", "cd /ws/student && colcon build --symlink-install && source install/setup.bash && exec ros2 launch vs_bringup servo.launch.py"]
+    mem_limit: 12g
     # ros2 launch only reacts to SIGINT; with SIGTERM docker kills it after 10 s, the IBVS node never
     # sends its zero command and the velocity controller keeps moving the arm
     stop_signal: SIGINT
@@ -41,6 +50,7 @@ services:
   foxglove:
     image: vs-fm:jazzy
     network_mode: host
+    mem_limit: 2g
     # Fast DDS sends data between local processes through shared memory; without the host IPC
     # namespace discovery works but no messages arrive
     ipc: host
