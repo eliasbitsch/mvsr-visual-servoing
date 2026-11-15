@@ -6,6 +6,7 @@ import threading
 import cv2
 import numpy as np
 
+from vs_perception import resolve_device(device)
 from vs_perception import sam2_utils
 from vs_perception.registry import Registry, weights_path
 
@@ -89,9 +90,9 @@ class Sam2Tracker(Tracker):
     _lock = threading.Lock()
     _predictor = None
 
-    def __init__(self, device='cuda', weights='sam2.1_t.pt', min_score=0.05,
+    def __init__(self, device='auto', weights='sam2.1_t.pt', min_score=0.05,
                  refresh_interval=15, max_memory=4, **_):
-        self.device = device
+        self.device = resolve_device(device)
         self.weights = weights
         self.min_score = min_score
         self.refresh_interval = refresh_interval
