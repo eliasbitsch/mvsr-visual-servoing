@@ -1,0 +1,10 @@
+# docker-compose.amd.yml
+services:
+  fm:
+    build:
+      args:
+        TORCH_INDEX: ${TORCH_INDEX:-cpu}
+          #    devices: [/dev/kfd, /dev/dri]
+          #    group_add: [video, render]
+          #    environment:
+          #      - HSA_OVERRIDE_GFX_VERSION=11.0.0   # gfx1103 isn't officially supported
