@@ -160,7 +160,7 @@ is compared modulo 180 deg. Tolerances: `--pos-tol`, `--rot-tol`.
 `scripts/run_campaign.py` runs every block of `experiments/final.yaml` unattended (main
 configuration, robustness, safe stop, inference time, the other localisation models), then the
 offline benchmark and the notebook. It starts and restarts the containers itself, starts Ollama
-or the Claude shim only for the blocks that need them, restarts the sim when the Gazebo bridge
+or the CLI VLM shim only for the blocks that need them, restarts the sim when the Gazebo bridge
 stalls, and stops everything when the host runs low on memory. Run it from WSL (or Linux) with
 nothing else of the stack running:
 
@@ -177,9 +177,9 @@ camera frames x all models x prompt formulations (category, attribute, synonym, 
 description, absent object). The ground-truth box is the projected object geometry; output
 `<campaign>/bench/results.csv` with IoU, correctness, false positives and latency per query.
 
-**Opus 5.5 as detector** goes through the Claude Code CLI on the host
-(`python scripts/claude_vlm_server.py`, OpenAI-compatible on port 11436, needs a logged-in
-`claude`); `run_campaign.py` starts it on demand. Each call takes several seconds and counts
+**Opus 5.5 as detector** goes through a logged-in agent CLI on the host
+(`python scripts/cli_vlm_server.py`, OpenAI-compatible on port 11436, CLI command set via
+`VLM_CLI`); `run_campaign.py` starts it on demand. Each call takes several seconds and counts
 against the subscription.
 
 ## 6. Topics
@@ -201,7 +201,7 @@ against the subscription.
 - Qwen3-VL (Alibaba, Apache 2.0) and Gemma 4 (Google, Apache 2.0) served by Ollama (MIT).
 - SAM 3 (Meta, SAM licence, gated on Hugging Face), Florence-2 (Microsoft, MIT) via transformers.
 - LocateAnything-3B (NVIDIA, non-commercial research licence), remote code from Hugging Face.
-- Claude Opus 5.5 (Anthropic) through the Claude Code CLI, as a comparison only.
+- Opus 5.5 (Anthropic) through the agent CLI, as a comparison only.
 - Lichtblick (web GUI, MPL-2.0), foxglove_bridge (MIT).
 - IBVS features: O. Tahri, F. Chaumette, "Point-based and region-based image moments for visual
   servoing of planar objects", IEEE T-RO 2005.

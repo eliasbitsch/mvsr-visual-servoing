@@ -27,7 +27,7 @@ ROS_ENV = ('source /opt/ros/jazzy/setup.bash && source /ws/install/setup.bash &&
 # The Ollama on the Windows host (Vulkan): llama.cpp's CUDA kernels crash sporadically on this
 # laptop's RTX 3080 Ti (illegal memory access), so not the compose service
 OLLAMA_URL = 'http://localhost:11434'
-CLAUDE_URL = 'http://localhost:11436'
+CLI_VLM_URL = 'http://localhost:11436'
 MIN_FREE_GB = 3.0
 RESUME_FREE_GB = 8.0
 MAX_MEMORY_WAIT = 2 * 3600
@@ -118,7 +118,7 @@ class Fm:
                         for k, v in launch.items() if not k.startswith('vlm_'))
         env = []
         if launch.get('vlm_model'):
-            url = CLAUDE_URL if 'claude' in launch['vlm_model'] else OLLAMA_URL
+            url = CLI_VLM_URL if 'claude' in launch['vlm_model'] else OLLAMA_URL
             env = ['-e', f'VS_VLM_URL={url}/v1', '-e', f'VS_VLM_MODEL={launch["vlm_model"]}']
         cmd = ('cd /ws/student && colcon build --symlink-install && source install/setup.bash '
                f'&& exec ros2 launch vs_bringup servo.launch.py {args}')
@@ -163,14 +163,14 @@ def unload_host_ollama():
 def ensure_vlm_server(model):
     """Start only what the block needs; everything else stays off (VRAM, quota)."""
     if model and 'claude' in model:
-        if not http_ok(f'{CLAUDE_URL}/v1/models'):
-            log('starting the Claude shim on the host')
-            win_path = sh(['wslpath', '-w', str(REPO / 'scripts' / 'claude_vlm_server.py')]
+        if not http_ok(f'{CLI_VLM_URL}/v1/models'):
+            log('starting the CLI VLM shim on the host')
+            win_path = sh(['wslpath', '-w', str(REPO / 'scripts' / 'cli_vlm_server.py')]
                           ).stdout.strip()
             subprocess.Popen(['python.exe', win_path, '--idle-exit', '3600'],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              start_new_session=True)
-            wait_for(lambda: http_ok(f'{CLAUDE_URL}/v1/models'), 60, 'Claude shim')
+            wait_for(lambda: http_ok(f'{CLI_VLM_URL}/v1/models'), 60, 'CLI VLM shim')
     if model and 'claude' not in model:
         # Briefly gone while the driver resets the GPU after a fault
         wait_for(lambda: http_ok(f'{OLLAMA_URL}/api/tags'), 180, f'Ollama at {OLLAMA_URL}')
