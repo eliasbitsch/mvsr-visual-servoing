@@ -6,7 +6,7 @@ import threading
 import cv2
 import numpy as np
 
-from vs_perception import resolve_device(device)
+from vs_perception.device import resolve_device
 from vs_perception import sam2_utils
 from vs_perception.registry import Registry, weights_path
 

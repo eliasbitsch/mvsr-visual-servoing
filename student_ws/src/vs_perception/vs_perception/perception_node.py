@@ -24,6 +24,7 @@ from vs_perception.detectors import DETECTORS
 from vs_perception.image_utils import from_rgb, to_rgb
 from vs_perception.refiners import REFINERS
 from vs_perception.trackers import TRACKERS, NoTracker
+from vs_perception.device import resolve_device
 
 
 cv2.setNumThreads(2)  # default pool = all cores, mostly spinning; CSRT does not need more
@@ -54,10 +55,10 @@ class PerceptionNode(Node):
 
         self.get_logger().info(f'loading detector "{p["detector"]}" on {self.device} ...')
         t0 = time.monotonic()
-        self.detector = DETECTORS.create(p['detector'], device=p['self.device'],
+        self.detector = DETECTORS.create(p['detector'], device=self.device,
                                          score_threshold=p['score_threshold'])
         self.detector.load()
-        self.refiner = REFINERS.create(p['refiner'], device=p['self.device'])
+        self.refiner = REFINERS.create(p['refiner'], device=self.device)
         self.refiner.load()
         self.tracker_name = p['tracker']
         self.tracker = TRACKERS.create(self.tracker_name, device=self.device)
