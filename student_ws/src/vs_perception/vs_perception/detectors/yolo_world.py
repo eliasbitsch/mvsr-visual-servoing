@@ -7,10 +7,21 @@ from vs_perception.detectors.base import Detection, Detector, register_detector
 class YoloWorld(Detector):
     """YOLO-World via Ultralytics (AGPL-3.0). Real-time, fits on 4 GB GPUs."""
 
+    # Its scores on the simulated objects stay far below the shared 0.3 (red can ~0.02,
+    # blue box ~0.2); 0.1 is the usual setting for open-vocabulary YOLO
+    default_threshold = 0.1
+
     def load(self):
-        from ultralytics import YOLOWorld
+        import os
+
+        from ultralytics import YOLOWorld, settings
 
         from vs_perception.registry import weights_path
+        # CLIP (338 MB) goes to <weights_dir>/clip; the default is relative to the working
+        # directory, so every container downloaded it again
+        if os.environ.get('VS_WEIGHTS_DIR'):
+            settings.update({'weights_dir': os.environ['VS_WEIGHTS_DIR']})
+        self.score_threshold = min(self.score_threshold, self.default_threshold)
         self._model = YOLOWorld(weights_path(self.options.get('weights', 'yolov8s-worldv2.pt')))
         self._prompt = None
 

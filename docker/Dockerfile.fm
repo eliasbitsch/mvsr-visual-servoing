@@ -48,3 +48,16 @@ ENV HF_HOME=/models/huggingface \
 # WebSocket bridge for the Lichtblick web GUI (docker-compose.fm.yml, service foxglove)
 RUN apt-get update && apt-get install -y --no-install-recommends ros-jazzy-foxglove-bridge \
     && rm -rf /var/lib/apt/lists/*
+
+# nbconvert etc.: executes notebooks/evaluation.ipynb at the end of a campaign
+# decord, lmdb, peft: imported by the remote code of LocateAnything-3B
+# matplotlib>=3.9: the plain requirement was met by Ubuntu's copy (built against numpy 1)
+# through --system-site-packages, so the venv had none of its own
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /opt/vs-venv/bin/pip install -c /opt/constraints.txt nbconvert ipykernel pyyaml \
+      decord lmdb peft "matplotlib>=3.9"
+# LocateAnything's remote code needs transformers 4.57; its worker process puts this folder in
+# front of the venv (same torch), everything else keeps transformers 5.x
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /opt/vs-venv/bin/pip install --no-deps --target /opt/la-site \
+      transformers==4.57.1 "huggingface_hub>=0.34,<1.0" "tokenizers>=0.22,<0.23"

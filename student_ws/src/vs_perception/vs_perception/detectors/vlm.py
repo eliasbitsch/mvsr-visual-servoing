@@ -20,11 +20,18 @@ FORMATS = {
     'qwen': ('bbox_2d', (0, 1, 2, 3),
              'Locate every {prompt} in the image. Output JSON: '
              '[{{"bbox_2d": [x1, y1, x2, y2], "label": "{prompt}"}}]. Output [] if there is none.'),
-    # Gemma: {"box_2d": [y0, x0, y1, x1], "label": ...}
+    # Gemma: {"box_2d": [y0, x0, y1, x1], "label": ...}. Gemma 4 E4B answered [] for the can seen
+    # from above with "every ..." or with an "output [] if there is none" clause, but found it
+    # with this wording
     'gemma': ('box_2d', (1, 0, 3, 2),
-              'Detect every {prompt} in the image. Output a JSON list with "box_2d" '
-              '([ymin, xmin, ymax, xmax], normalised to 0-1000) and "label". '
-              'Output [] if there is none.'),
+              'Detect the {prompt} in the image. Output a JSON list with "box_2d" '
+              '([ymin, xmin, ymax, xmax], normalised to 0-1000) and "label".'),
+    # Claude (scripts/claude_vlm_server.py): no trained box convention, so state the scale
+    'claude': ('bbox_2d', (0, 1, 2, 3),
+               'Locate every {prompt} in the image. Output JSON: '
+               '[{{"bbox_2d": [x1, y1, x2, y2], "label": "{prompt}"}}] with tight boxes and '
+               'coordinates normalised to 0-1000 of the image width and height '
+               '(0,0 = top left). Output [] if there is none.'),
     # GLM-4.xV: free text with <|begin_of_box|>[x0, y0, x1, y1]<|end_of_box|>
     'glm': (None, (0, 1, 2, 3),
             'Locate every {prompt} in the image and give the bounding box of each one.'),
@@ -35,6 +42,8 @@ _QUAD = re.compile(r'\[?\s*\(?\s*' + r'\s*,\s*'.join([f'({_NUMBER})'] * 4))
 
 def _box_format(model):
     name = model.lower()
+    if 'claude' in name:
+        return 'claude'
     return 'gemma' if 'gemma' in name else 'glm' if 'glm' in name else 'qwen'
 
 
@@ -92,9 +101,10 @@ class Vlm(Detector):
             'temperature': 0,
             # GLM reasons before answering and needs room for that
             'max_tokens': int(self.options.get('max_tokens', 2048 if self.format == 'glm' else 512)),
+            # Image first: with the text first Gemma 4 answered [] or nothing at all
             'messages': [{'role': 'user', 'content': [
-                {'type': 'text', 'text': template.format(prompt=prompt)},
                 {'type': 'image_url', 'image_url': {'url': image_url}},
+                {'type': 'text', 'text': template.format(prompt=prompt)},
             ]}],
         }
         text = _get_json(f'{self.url}/chat/completions', body,

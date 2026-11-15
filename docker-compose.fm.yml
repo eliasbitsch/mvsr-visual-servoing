@@ -23,6 +23,8 @@ services:
     environment:
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
       # OpenAI-compatible VLM endpoint for detector:=vlm (the ollama service below, or vLLM, ...)
+      # Read token of a Hugging Face account with access to the gated SAM 3 weights (.env)
+      - HF_TOKEN=${HF_TOKEN:-}
       - VS_VLM_URL=${VS_VLM_URL:-http://localhost:11435/v1}
       - VS_VLM_MODEL=${VS_VLM_MODEL:-qwen3-vl:8b-instruct}
     volumes:

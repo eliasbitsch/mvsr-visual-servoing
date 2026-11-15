@@ -126,6 +126,11 @@ server or SGLang through `VS_VLM_URL`; the model is chosen with `VS_VLM_MODEL`. 
 downloaded elsewhere can be copied into the volume: `scripts/import_ollama_models.sh <folder>`.
 A VLM call takes 1–2 s, the tracker carries the control loop in between.
 
+On some laptop GPUs (seen on an RTX 3080 Ti under WSL) llama.cpp's CUDA kernels crash
+sporadically ("illegal memory access", HTTP 500 from Ollama). Then run Ollama natively on the
+host with the Vulkan backend (`OLLAMA_LLM_LIBRARY=vulkan`, port 11434) and point
+`VS_VLM_URL=http://localhost:11434/v1` at it; `scripts/run_campaign.py` uses that host Ollama.
+
 ## 5. Evaluation
 
 The evaluation script (assignment section 2.5) runs every target x start configuration on its own:
@@ -150,6 +155,33 @@ Success means converged within the timeout (60 s) and within 5 mm and 2 deg of t
 Round objects (can, cup, ball) have no observable yaw, so their rotation error ignores it; the box
 is compared modulo 180 deg. Tolerances: `--pos-tol`, `--rot-tol`.
 
+### Whole campaign in one go
+
+`scripts/run_campaign.py` runs every block of `experiments/final.yaml` unattended (main
+configuration, robustness, safe stop, inference time, the other localisation models), then the
+offline benchmark and the notebook. It starts and restarts the containers itself, starts Ollama
+or the Claude shim only for the blocks that need them, restarts the sim when the Gazebo bridge
+stalls, and stops everything when the host runs low on memory. Run it from WSL (or Linux) with
+nothing else of the stack running:
+
+```bash
+python3 scripts/run_campaign.py experiments/final.yaml --smoke   # one short run per block first
+python3 scripts/run_campaign.py experiments/final.yaml           # ~600 runs, about 6 h
+```
+
+Results go to `data/eval/final/<block>/`; the same command continues an interrupted campaign
+(finished blocks have a `DONE` file). `notebooks/evaluation.ipynb` reads this folder.
+
+**Offline benchmark** (`python -m vs_evaluation.bench_detectors --campaign <folder>`): the saved
+camera frames x all models x prompt formulations (category, attribute, synonym, indirect
+description, absent object). The ground-truth box is the projected object geometry; output
+`<campaign>/bench/results.csv` with IoU, correctness, false positives and latency per query.
+
+**Opus 5.5 as detector** goes through the Claude Code CLI on the host
+(`python scripts/claude_vlm_server.py`, OpenAI-compatible on port 11436, needs a logged-in
+`claude`); `run_campaign.py` starts it on demand. Each call takes several seconds and counts
+against the subscription.
+
 ## 6. Topics
 
 | Topic | Type | Note |
@@ -167,5 +199,9 @@ is compared modulo 180 deg. Tolerances: `--pos-tol`, `--rot-tol`.
 - Grounding DINO (IDEA-Research, Apache 2.0), OWLv2 (Google, Apache 2.0) via Hugging Face transformers.
 - YOLO-World and SAM 2 wrappers: Ultralytics (AGPL-3.0); SAM 2 weights by Meta (Apache 2.0).
 - Qwen3-VL (Alibaba, Apache 2.0) and Gemma 4 (Google, Apache 2.0) served by Ollama (MIT).
+- SAM 3 (Meta, SAM licence, gated on Hugging Face), Florence-2 (Microsoft, MIT) via transformers.
+- LocateAnything-3B (NVIDIA, non-commercial research licence), remote code from Hugging Face.
+- Claude Opus 5.5 (Anthropic) through the Claude Code CLI, as a comparison only.
+- Lichtblick (web GUI, MPL-2.0), foxglove_bridge (MIT).
 - IBVS features: O. Tahri, F. Chaumette, "Point-based and region-based image moments for visual
   servoing of planar objects", IEEE T-RO 2005.
