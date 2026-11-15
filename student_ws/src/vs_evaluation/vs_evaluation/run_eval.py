@@ -22,6 +22,7 @@ import json
 import math
 import os
 import subprocess
+import threading
 import time
 
 import cv2
@@ -58,7 +59,9 @@ LIGHTS = {
                  'attenuation_linear: 0.05, attenuation_quadratic: 0.01',
 }
 OCCLUDER = 'vs_occluder'
-OCCLUDER_HEIGHT = 0.08   # above the target top, between camera (0.30 above) and target
+# Just above the target top: a plate higher up (closer to the camera) covered far more than the
+# nominal fraction from the shifted start poses through parallax
+OCCLUDER_HEIGHT = 0.01
 SAMPLE_RATE = 20.0
 
 SERIES_FIELDS = ['t', 'ibvs_err_fresh', 'converged', 'feat_valid', 'feat_source',
@@ -68,7 +71,7 @@ SERIES_FIELDS = ['t', 'ibvs_err_fresh', 'converged', 'feat_valid', 'feat_source'
                  'cam_x', 'cam_y', 'cam_z', 'cam_qx', 'cam_qy', 'cam_qz', 'cam_qw']
 
 SUMMARY_FIELDS = ['target', 'start', 'detector', 'tracker', 'detector_period', 'detector_delay',
-                  'occlusion', 'light', 'success', 'converged', 'conv_time_s', 'outcome',
+                  'occlusion', 'occlusion_after', 'light', 'success', 'converged', 'conv_time_s', 'outcome',
                   'final_pos_err_m', 'final_rot_err_deg', 'final_rot_err_raw_deg',
                   'final_feature_err', 'detector_calls', 'lost_stop_time_s', 'drift_after_loss_m']
 
@@ -101,11 +104,12 @@ def set_light(factor):
 def spawn_occluder(target_cfg, fraction):
     """Grey plate above the target that covers `fraction` of its footprint from the +x side."""
     x, y, z, _ = target_cfg['pose']
-    fx = target_cfg['footprint'][0]
-    depth = 0.15
+    fx, fy = target_cfg['footprint']
+    # Sized to the target: a large board also hid the neighbouring objects
+    depth, width = 0.08, fy + 0.04
     cx = x + fx / 2 - fraction * fx + depth / 2
     sdf = (f'<sdf version="1.9"><model name="{OCCLUDER}"><static>true</static><link name="l">'
-           f'<visual name="v"><geometry><box><size>{depth} 0.25 0.004</size></box></geometry>'
+           f'<visual name="v"><geometry><box><size>{depth} {width} 0.004</size></box></geometry>'
            f'<material><diffuse>0.35 0.35 0.38 1</diffuse><ambient>0.35 0.35 0.38 1</ambient>'
            f'</material></visual></link></model></sdf>')
     req = (f'sdf: {json.dumps(sdf)}, pose: {{position: {{x: {cx}, y: {y}, '
@@ -239,22 +243,25 @@ class Recorder(Node):
             out[n] = v.string_value if v.type == ParameterType.PARAMETER_STRING else v.double_value
         return out
 
-    def wait_target(self, prompt, timeout, hold=1.0):
-        """Wait until the target with this prompt is seen continuously for `hold` seconds.
+    def wait_target(self, prompt, timeout, hold=1.0, max_gap=2.0):
+        """Wait until the target with this prompt has been seen for `hold` seconds.
 
         Detector or tracker, both count: with detect_on_loss the detector only runs while no
-        track exists, so after a move the tracker may be the only source.
+        track exists, so after a move the tracker may be the only source. Gaps up to `max_gap`
+        are allowed: without a tracker, features are only valid on detector frames.
         """
-        self.feat, since, end = None, None, time.monotonic() + timeout
+        self.feat, first, last, n = None, None, None, 0
+        end = time.monotonic() + timeout
         while time.monotonic() < end:
             rclpy.spin_once(self, timeout_sec=0.05)
-            f = self.feat
+            f, now = self.feat, time.monotonic()
+            self.feat = None  # count every message once
             if f and f.valid and f.prompt == prompt:
-                since = since or time.monotonic()
-                if time.monotonic() - since >= hold:
+                if last is None or now - last > max_gap:
+                    first, n = now, 0
+                last, n = now, n + 1
+                if now - first >= hold and n >= 2:
                     return True
-            elif f is not None:
-                since = None
         return False
 
     def save_view(self, folder, name, target):
@@ -291,29 +298,48 @@ def run_one(rec, symmetry, args, target_cfg):
     rec.spin_for(0.3)  # drop converged messages still queued from the previous run
     rec.rows, rec.t0, rec.converged, rec.detections = [], time.monotonic(), False, 0
     rec.call('start')
-    conv_time = lost_t = None
+    conv_time = lost_t = mover = occluder = None
+    outcome = 'timeout'
+    moved = threading.Event()
     while time.monotonic() - rec.t0 < args.timeout:
         rclpy.spin_once(rec, timeout_sec=0.02)
         elapsed = time.monotonic() - rec.t0
+        if args.occlusion_after is not None and occluder is None and elapsed >= args.occlusion_after:
+            occluder = threading.Thread(target=spawn_occluder,
+                                        args=(target_cfg, args.occlusion), daemon=True)
+            occluder.start()
         if args.lose_target_after is not None:
-            if lost_t is None and elapsed >= args.lose_target_after:
-                move_model(target_cfg['model'], 3.0, 3.0, 0.0)   # far out of view
+            # The gz service call takes seconds; in a thread the recorder keeps sampling
+            if mover is None and elapsed >= args.lose_target_after:
+                def lose():
+                    move_model(target_cfg['model'], 3.0, 3.0, 0.0)   # far out of view
+                    moved.set()
+                mover = threading.Thread(target=lose, daemon=True)
+                mover.start()
+            if lost_t is None and moved.is_set():
                 lost_t = elapsed
             if lost_t is not None and elapsed > lost_t + 5.0:
                 break
             continue
         if rec.converged:
-            conv_time = elapsed
+            conv_time, outcome = elapsed, 'converged'
             break
-        if rec.feat is not None and not rec.feat.valid and elapsed > 2.0:
-            break
+        # The controller decides about a lost target (lost_timeout, stale features); its error
+        # stream stopping is the sign. A stricter check here ended runs of slow detectors at
+        # every short tracker gap the controller rides out.
         if elapsed > 2.0 and time.monotonic() - rec.err_time > 2.0:
-            break  # the controller ended the run (target lost), even if perception re-detects
+            outcome = 'target lost'
+            break
     rec.spin_for(0.5)  # a few rows in the final pose
     rec.call('stop')
+    if occluder is not None:
+        occluder.join()
+        remove_occluder()  # the next start detects without it
     rows, rec.rows = rec.rows, None
     result = {'lost_stop_time_s': '', 'drift_after_loss_m': ''}
-    if lost_t is not None:
+    if mover is not None:
+        mover.join()
+        lost_t = lost_t if lost_t is not None else elapsed
         x, y, z, yaw = target_cfg['pose']
         move_model(target_cfg['model'], x, y, z, yaw)
         stop_t, drift = stop_metrics(rows, lost_t)
@@ -324,12 +350,6 @@ def run_one(rec, symmetry, args, target_cfg):
     g = rec.gt or [math.nan] * 8
     last = rows[-1] if rows else None
     feat_err = (math.sqrt(sum(x * x for x in last[9:13] if not math.isnan(x))) if last else math.nan)
-    if conv_time is not None:
-        outcome = 'converged'
-    elif (rec.feat is not None and not rec.feat.valid) or time.monotonic() - rec.err_time > 2.0:
-        outcome = 'target lost'
-    else:
-        outcome = 'timeout'
     rot = math.degrees(symmetric_rot_err(g[3], g[4], g[5], symmetry))
     result.update(converged=int(conv_time is not None),
                   conv_time_s=round(conv_time, 2) if conv_time is not None else '',
@@ -347,6 +367,9 @@ def main():
     ap.add_argument('--timeout', type=float, default=60.0, help='seconds per run')
     ap.add_argument('--pos-tol', type=float, default=0.005, help='success tolerance [m]')
     ap.add_argument('--rot-tol', type=float, default=2.0, help='success tolerance [deg]')
+    ap.add_argument('--occlusion-after', type=float,
+                    help='spawn the occluder this many seconds into each run instead of before it '
+                         '(tests the tracker, not the detection under occlusion)')
     ap.add_argument('--occlusion', type=float, default=0.0,
                     help='fraction of the target footprint covered by a plate (nominal, 0-1)')
     ap.add_argument('--light', type=float, default=1.0, help='intensity factor for both lights')
@@ -394,12 +417,13 @@ def main():
     fixed = {'detector': params['detector'], 'tracker': params['tracker'],
              'detector_period': params['detector_period'],
              'detector_delay': params['detector_delay'],
-             'occlusion': args.occlusion, 'light': args.light}
+             'occlusion': args.occlusion, 'occlusion_after': args.occlusion_after,
+             'light': args.light}
 
     try:
         with open(summary_path, 'a', newline='') as fh:
             summary = csv.DictWriter(fh, SUMMARY_FIELDS)
-            if not done:
+            if fh.tell() == 0:  # also after an attempt that crashed before its first run
                 summary.writeheader()
             for target in args.targets:
                 todo = [s for s in args.starts if (target, s) not in done]
@@ -416,9 +440,15 @@ def main():
                 rec.save_view(os.path.join(out, 'images'), f'{target}_reference', target)
                 if (not rec.wait_target(prompt, 30.0)
                         or not rec.call('capture_reference').success):
-                    print(f'{target}: no detection at the reference pose, skipped', flush=True)
+                    # Counted as failures, otherwise a weak detector looks better than it is
+                    print(f'{target}: no detection at the reference pose', flush=True)
+                    for start in todo:
+                        summary.writerow({'target': target, 'start': start, **fixed,
+                                          'success': 0, 'converged': 0,
+                                          'outcome': 'no reference'})
+                    fh.flush()
                     continue
-                if args.occlusion > 0:
+                if args.occlusion > 0 and args.occlusion_after is None:
                     spawn_occluder(target_cfg, args.occlusion)
                 if args.light != 1.0:
                     set_light(args.light)

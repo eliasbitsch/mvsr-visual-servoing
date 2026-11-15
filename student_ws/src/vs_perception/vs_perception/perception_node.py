@@ -160,12 +160,13 @@ class PerceptionNode(Node):
         return tracker, box, last
 
     def apply_detections(self):
-        """Returns True if a fresh detection was applied in this call."""
-        fresh = False
+        """Returns (fresh detection applied, any detector result for this prompt arrived)."""
+        fresh = arrived = False
         while not self.results.empty():
             stamp, prompt, best, latency, replay = self.results.get_nowait()
             if prompt != self.prompt:
                 continue
+            arrived = True
             self.latency = latency
             if best is None:
                 self.missed += 1
@@ -178,7 +179,7 @@ class PerceptionNode(Node):
             self.det_mask = best.mask
             self.tracker, self.track_box, self.track_seq = replay
             fresh = True
-        return fresh
+        return fresh, arrived
 
     def on_image(self, msg):
         img = to_rgb(msg)
@@ -187,7 +188,7 @@ class PerceptionNode(Node):
             self.frames.append((self.seq, msg.header.stamp, img))
             self.latest = (self.seq, msg.header.stamp, img)
 
-        fresh = self.apply_detections()
+        fresh, arrived = self.apply_detections()
         tracking = self.tracking
         # Catch up the frames that arrived while the worker replayed (usually one or two)
         if self.track_box is not None and tracking and self.track_seq < self.seq:
@@ -214,11 +215,16 @@ class PerceptionNode(Node):
             out.angle_valid = f.angle_valid
             out.bbox = [float(x) for x in box]
             out.score = self.score
+        # Without a tracker a frame between detector results carries no measurement: publishing it
+        # as invalid made the controller stop at the first gap. Invalid goes out only once the
+        # detector itself has missed the target max_missed times.
+        silent = not tracking and not fresh and not (arrived and self.track_box is None)
         if self.det_stamp is not None:
             out.detection_age = (Time.from_msg(msg.header.stamp)
                                  - Time.from_msg(self.det_stamp)).nanoseconds * 1e-9
         out.detector_latency = self.latency
-        self.pub.publish(out)
+        if not silent:
+            self.pub.publish(out)
 
         raw_subs = self.debug_pub.get_subscription_count()
         jpeg_subs = self.debug_jpeg_pub.get_subscription_count()
