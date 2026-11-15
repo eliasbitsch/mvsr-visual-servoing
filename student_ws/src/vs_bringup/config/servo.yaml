@@ -6,7 +6,7 @@ perception_node:
     # Both nodes only compare their own timestamps, so wall time is enough.
     use_sim_time: false
     image_topic: /camera/image_raw
-    device: cuda
+    device: auto  # patched
     score_threshold: 0.3
     max_missed_detections: 3
     frame_buffer_size: 150

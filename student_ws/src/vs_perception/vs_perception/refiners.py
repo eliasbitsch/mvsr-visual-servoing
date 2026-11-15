@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 import cv2
 import numpy as np
 
+from vs_perception.device import resolve_device
 from vs_perception.registry import Registry
 
 REFINERS = Registry('refiner')
@@ -11,8 +12,8 @@ REFINERS = Registry('refiner')
 
 class MaskRefiner(ABC):
 
-    def __init__(self, device='cuda', **options):
-        self.device = device
+    def __init__(self, device='auto', **options):
+        self.device = resolve_device(device)
         self.options = options
 
     def load(self):

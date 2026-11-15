@@ -20,7 +20,7 @@ def main():
     ap.add_argument('--detector', required=True, choices=DETECTORS.names())
     ap.add_argument('--prompt', action='append', required=True,
                     help='repeat to compare several prompts in one run')
-    ap.add_argument('--device', default='cuda')
+    ap.add_argument('--device', default='auto')
     ap.add_argument('--threshold', type=float, default=0.2)
     ap.add_argument('--out', type=Path, required=True)
     args = ap.parse_args()

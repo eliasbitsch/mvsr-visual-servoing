@@ -35,7 +35,7 @@ class PerceptionNode(Node):
         super().__init__('perception_node')
         params = {
             'detector': 'grounding_dino', 'prompt': 'red can', 'detector_period': 1.0, 'detector_delay': 0.0,
-            'score_threshold': 0.3, 'device': 'cuda', 'tracker': 'csrt', 'refiner': 'none',
+            'score_threshold': 0.3, 'device': 'auto', 'tracker': 'csrt', 'refiner': 'none',
             'image_topic': '/camera/image_raw', 'max_missed_detections': 3,
             'frame_buffer_size': 150, 'publish_debug_image': True,
             'detect_on_loss': False,
@@ -50,14 +50,14 @@ class PerceptionNode(Node):
         self.max_missed = p['max_missed_detections']
         self.debug = p['publish_debug_image']
         self.detect_on_loss = p['detect_on_loss']
-        self.device = p['device']
+        self.device = resolve_device(p['device']) # auto detect device
 
-        self.get_logger().info(f'loading detector "{p["detector"]}" on {p["device"]} ...')
+        self.get_logger().info(f'loading detector "{p["detector"]}" on {self.device} ...')
         t0 = time.monotonic()
-        self.detector = DETECTORS.create(p['detector'], device=p['device'],
+        self.detector = DETECTORS.create(p['detector'], device=p['self.device'],
                                          score_threshold=p['score_threshold'])
         self.detector.load()
-        self.refiner = REFINERS.create(p['refiner'], device=p['device'])
+        self.refiner = REFINERS.create(p['refiner'], device=p['self.device'])
         self.refiner.load()
         self.tracker_name = p['tracker']
         self.tracker = TRACKERS.create(self.tracker_name, device=self.device)

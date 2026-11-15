@@ -26,9 +26,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
          numpy opencv-contrib-python-headless scipy matplotlib pandas
 
 # CUDA 12.4 wheels bundle their own CUDA runtime, only the host driver is needed
+ARG TORCH_INDEX=cu124
 RUN --mount=type=cache,target=/root/.cache/pip \
     /opt/vs-venv/bin/pip install -c /opt/constraints.txt \
-      torch torchvision --index-url https://download.pytorch.org/whl/cu124
+      torch torchvision --index-url https://download.pytorch.org/whl/${TORCH_INDEX}
 # ultralytics pulls opencv-python, which would shadow the contrib build (CSRT/KCF trackers)
 RUN --mount=type=cache,target=/root/.cache/pip \
     /opt/vs-venv/bin/pip install -c /opt/constraints.txt \

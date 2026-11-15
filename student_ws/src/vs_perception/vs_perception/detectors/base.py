@@ -4,6 +4,7 @@ from typing import Optional
 
 import numpy as np
 
+from vs_perception.device import resolve_device
 from vs_perception.registry import Registry
 
 DETECTORS = Registry('detector')
@@ -25,8 +26,8 @@ class Detector(ABC):
     creating detectors works without a GPU stack.
     """
 
-    def __init__(self, device='cuda', score_threshold=0.3, **options):
-        self.device = device
+    def __init__(self, device='auto', score_threshold=0.3, **options): # cuda if available, else cpu
+        self.device = resolve_device(device) # was self.device = device
         self.score_threshold = score_threshold
         self.options = options
 
