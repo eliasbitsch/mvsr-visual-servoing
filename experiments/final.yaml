@@ -49,6 +49,12 @@ blocks:
     launch: {detector: vlm, vlm_model: 'qwen3-vl:8b-instruct'}
   det_gemma4_e4b:
     launch: {detector: vlm, vlm_model: 'gemma4:e4b'}
+  # Small VLMs that fit a 4 GB laptop GPU (RTX 3050 Ti). qwen3-vl-gpu:4b is qwen3-vl:4b-instruct
+  # with all layers forced onto the GPU: scripts/ollama/qwen3-vl-gpu-4b.Modelfile
+  det_qwen3vl_4b:
+    launch: {detector: vlm, vlm_model: 'qwen3-vl-gpu:4b'}
+  det_gemma4_e2b:
+    launch: {detector: vlm, vlm_model: 'gemma4:e2b'}
   det_opus55:
     launch: {detector: vlm, vlm_model: claude-opus-5-5}
     eval: {timeout: 90}
