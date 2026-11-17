@@ -1,0 +1,58 @@
+# Final evaluation campaign: scripts/run_campaign.py experiments/final.yaml
+# Each block becomes data/eval/<campaign>/<block>/ (run_eval output). `launch` restarts the
+# perception stack when it differs from the previous block; `eval` are run_eval options.
+defaults:
+  launch: {detector: grounding_dino, tracker: sam2, detect_on_loss: true}
+  eval: {timeout: 60}
+
+blocks:
+  # Main configuration (blocks with the same launch config follow each other: fewer model loads)
+  main_dino_sam2: {}
+
+  # Robustness (spec 2.5): partial occlusion, lighting. Occlusion from the start tests the
+  # detection, occlusion appearing 2 s into the run tests the tracker on a locked target
+  rob_occl20: {eval: {occlusion: 0.2}}
+  rob_occl40: {eval: {occlusion: 0.4}}
+  rob_occl20_mid: {eval: {occlusion: 0.2, occlusion_after: 2}}
+  rob_occl40_mid: {eval: {occlusion: 0.4, occlusion_after: 2}}
+  rob_light30: {eval: {light: 0.3}}
+  rob_light150: {eval: {light: 1.5}}
+
+  # Safe stop: target leaves the view mid-run
+  lost: {eval: {lose_target_after: 3, starts: [1, 3, 5]}}
+
+  # Classic tracker as comparison
+  main_dino_csrt:
+    launch: {tracker: csrt, detect_on_loss: false}
+
+  # Inference time: periodic re-detection at different rates, emulated slow hardware, no tracker
+  lat_p02:
+    launch: {detect_on_loss: false}
+    eval: {detector_period: 0.2}
+  lat_p5:
+    launch: {detect_on_loss: false}
+    eval: {detector_period: 5}
+  lat_p5_d1:
+    launch: {detect_on_loss: false}
+    eval: {detector_period: 5, detector_delay: 1}
+  lat_notracker:
+    launch: {tracker: none, detect_on_loss: false}
+    eval: {detector_period: 1, feature_timeout: 1.5}
+
+  # Other localisation models, each seeding the same SAM 2 tracker
+  det_owlv2: {launch: {detector: owlv2}}
+  det_yolo_world: {launch: {detector: yolo_world}}
+  det_florence2: {launch: {detector: florence2}}
+  det_sam3: {launch: {detector: sam3}}
+  det_locate_anything: {launch: {detector: locate_anything}}
+  det_qwen3vl_8b:
+    launch: {detector: vlm, vlm_model: 'qwen3-vl:8b-instruct'}
+  det_gemma4_e4b:
+    launch: {detector: vlm, vlm_model: 'gemma4:e4b'}
+  det_opus55:
+    launch: {detector: vlm, vlm_model: claude-opus-5-5}
+    eval: {timeout: 90}
+
+# After the closed-loop blocks
+bench: true
+notebook: notebooks/evaluation.ipynb

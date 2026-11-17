@@ -1,2 +1,12 @@
-*
-!docker/
+# macOS metadata (created on external / non-APFS drives)
+**/._*
+**/.DS_Store
+# not needed in the images
+.git/
+data/
+student_ws/
+docs/
+moodle/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/

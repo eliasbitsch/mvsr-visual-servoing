@@ -1,0 +1,109 @@
+# Our stack (FM perception + IBVS) next to the lab simulation from docker-compose.yml.
+# Image: docker/Dockerfile.fm on top of vs-sim:jazzy. Usage and GPU variants: README.md.
+services:
+  # Memory caps: a runaway (e.g. a perception node reloading its models after repeated CUDA
+  # faults) then stops one container instead of filling the host RAM. Applies to the lab's sim
+  # service too, without editing its compose file.
+  sim:
+    mem_limit: 6g
+  sim-nvidia:
+    mem_limit: 6g
+
+  fm:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.fm
+      # The default bridge dropped the 2.5 GB PyTorch download under WSL
+      network: host
+    image: vs-fm:jazzy
+    network_mode: host
+    ipc: host
+    stdin_open: true
+    tty: true
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
+      # OpenAI-compatible VLM endpoint for detector:=vlm (the ollama service below, or vLLM, ...)
+      # Read token of a Hugging Face account with access to the gated SAM 3 weights (.env)
+      - HF_TOKEN=${HF_TOKEN:-}
+      - VS_VLM_URL=${VS_VLM_URL:-http://localhost:11435/v1}
+      - VS_VLM_MODEL=${VS_VLM_MODEL:-qwen3-vl:8b-instruct}
+    volumes:
+      - ./student_ws:/ws/student
+      - ./data:/root/vs_data
+      - models:/models
+    command: ["bash", "-lc", "cd /ws/student && colcon build --symlink-install && source install/setup.bash && exec ros2 launch vs_bringup servo.launch.py"]
+    mem_limit: 12g
+    # ros2 launch only reacts to SIGINT; with SIGTERM docker kills it after 10 s, the IBVS node never
+    # sends its zero command and the velocity controller keeps moving the arm
+    stop_signal: SIGINT
+
+  fm-nvidia:
+    extends: fm
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # WebSocket bridge for Lichtblick (port 8766) plus the URDF relay, from student_ws (vs_bringup
+  # viz.launch.py). Waits until the fm service has built the workspace instead of building it twice.
+  foxglove:
+    image: vs-fm:jazzy
+    network_mode: host
+    mem_limit: 2g
+    # Fast DDS sends data between local processes through shared memory; without the host IPC
+    # namespace discovery works but no messages arrive
+    ipc: host
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
+    volumes:
+      - ./student_ws:/ws/student
+    command:
+      - bash
+      - -lc
+      - >-
+        until [ -f /ws/student/install/vs_bringup/share/vs_bringup/launch/viz.launch.py ]; do sleep 2; done;
+        source /ws/student/install/setup.bash && exec ros2 launch vs_bringup viz.launch.py
+    stop_signal: SIGINT
+
+  # Web GUI: http://localhost:8081/?ds=foxglove-websocket&ds.url=ws://localhost:8766
+  lichtblick:
+    image: ghcr.io/lichtblick-suite/lichtblick:1.30.0
+    network_mode: host
+    # Loads docker/lichtblick-dark.js before the app (once per container) for the dark default
+    command:
+      - sh
+      - -c
+      - >-
+        grep -q vs-dark.js index.html ||
+        sed -i 's#<script defer=#<script src="vs-dark.js"></script><script defer=#' index.html;
+        exec caddy file-server --listen :8081
+    volumes:
+      - ./docker/lichtblick-layout.json:/lichtblick/default-layout.json:ro
+      - ./docker/lichtblick-dark.js:/src/vs-dark.js:ro
+
+  # VLM server for detector:=vlm. Port 11435 so it does not clash with an Ollama on the host.
+  ollama:
+    image: ollama/ollama:0.40.14
+    profiles: [vlm]
+    network_mode: host
+    environment:
+      - OLLAMA_HOST=127.0.0.1:11435
+      - OLLAMA_KEEP_ALIVE=30m
+      # One model in VRAM at a time; a second one would be pushed to the CPU
+      - OLLAMA_MAX_LOADED_MODELS=1
+    volumes:
+      - ${VS_OLLAMA_STORE:-ollama}:/root/.ollama/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  models:
+  ollama:

@@ -1,0 +1,69 @@
+# Lab simulation (UR5e, wrist camera, RGB only).
+#   ros2 launch vs_bringup servo.launch.py prompt:="red can"
+perception_node:
+  ros__parameters:
+    # The sim publishes /clock at ~700 Hz; following it cost a full core per Python node.
+    # Both nodes only compare their own timestamps, so wall time is enough.
+    use_sim_time: false
+    image_topic: /camera/image_raw
+    device: auto  # patched
+    score_threshold: 0.3
+    max_missed_detections: 3
+    frame_buffer_size: 150
+    publish_debug_image: true
+
+ibvs_node:
+  ros__parameters:
+    use_sim_time: false
+    camera_info_topic: /camera/camera_info
+    base_frame: base_link
+    ee_frame: tool0
+    camera_frame: camera_optical_frame
+    arm_joints: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint,
+                 wrist_1_joint, wrist_2_joint, wrist_3_joint]
+    command_topic: /forward_velocity_controller/commands
+    velocity_controller: forward_velocity_controller
+    position_controller: scaled_joint_trajectory_controller
+    rate: 30.0
+
+    gain: 0.6
+    desired_u: -1.0
+    desired_v: -1.0
+    desired_area: 9000.0
+    desired_angle: 0.0
+    # Reference distance camera -> target top given by the assignment (targets.yaml)
+    desired_depth: 0.30
+    # Only takes effect with a mask (tracker:=sam2) of an elongated object, see features.py
+    control_yaw: true
+    align_optical_axis_down: true
+    align_gain: 1.0
+
+    max_linear_speed: 0.10
+    max_angular_speed: 0.5
+    joint_speed_scale: 0.5
+    joint_limit_margin: 0.1
+    dls_damping: 0.05
+    feature_timeout: 0.5
+    # Gap without features after which a run ends (perception reporting the target lost ends it at once)
+    lost_timeout: 2.0
+    converged_threshold: 0.01
+    converged_hold_time: 1.0
+
+    collision_margin: 0.01
+    safety_lookahead: 0.2
+    min_height: 0.03
+    height_frames: [tool0, camera_link]
+    # tool0 in base_link: x_min, y_min, z_min, x_max, y_max, z_max [m]
+    workspace: [0.1, -0.8, 0.0, 0.9, 0.8, 1.2]
+
+command_node:
+  ros__parameters:
+    use_sim_time: true
+    arm_joints: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint,
+                 wrist_1_joint, wrist_2_joint, wrist_3_joint]
+    trajectory_action: /scaled_joint_trajectory_controller/follow_joint_trajectory
+    quick_find_timeout: 5.0
+    # Camera looking down from ~0.45 m above the object group (can, box, cup, ball all in
+    # view). Fixed joint angles, computed once offline with vs_sim's IK for the offset
+    # [0.04, -0.08, 0.20, 0, 0, 0] from the red can reference pose; no ground truth at runtime.
+    overview_joints: [-0.8857, -1.3606, 0.9503, -1.1605, -1.5708, -0.8857]
