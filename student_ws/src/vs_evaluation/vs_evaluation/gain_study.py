@@ -99,8 +99,6 @@ def summarise(df):
 
 
 def plot(summary, path):
-    import matplotlib
-    matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9, 3.5))
     for target, d in summary.groupby('target'):
@@ -117,6 +115,7 @@ def plot(summary, path):
         ax.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(path, dpi=150)
+    plt.close(fig)
 
 
 def main():
@@ -132,6 +131,8 @@ def main():
     summary.to_csv(out / 'gain_study_summary.csv', index=False)
     with pd.option_context('display.width', 160, 'display.precision', 3):
         print(summary.to_string(index=False))
+    import matplotlib
+    matplotlib.use('Agg')  # CLI only: the notebook keeps its inline backend
     plot(summary, out / 'gain_study.png')
     print(f'written to {out}/gain_study*.csv, gain_study.png')
 
