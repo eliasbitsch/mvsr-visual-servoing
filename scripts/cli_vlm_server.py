@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """OpenAI-compatible /v1/chat/completions in front of a logged-in agent CLI on the host, for detector:=vlm.
 
-Runs on the host (where the CLI is logged in), not in the container. With WSL mirrored
+claude-* models go to the Claude Code CLI, gpt-* models to the Codex CLI (both logged in with
+the subscription). Runs on the host (where the CLIs are logged in), not in the container. With WSL mirrored
 networking the container reaches it on localhost:
     python scripts/cli_vlm_server.py            # port 11436
     ros2 launch vs_bringup servo.launch.py detector:=vlm  (VS_VLM_URL=http://localhost:11436/v1,
@@ -14,18 +15,41 @@ import base64
 import json
 import subprocess
 import os
+import shutil
 import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']
+MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'gpt-6-astra',
+          'gpt-6.1-terra']
+# Codex: medium effort, comparable to the Claude calls (default effort), not the top setting
+CODEX_EFFORT = os.environ.get('VLM_CODEX_EFFORT', 'medium')
 CLI = os.environ.get('VLM_CLI', 'claude')
 SYSTEM = 'You are an object detector. Answer only with the requested JSON, no prose.'
 
 
+def ask_codex(model, text, image_bytes, timeout):
+    with tempfile.TemporaryDirectory() as tmp:
+        img, answer = Path(tmp) / 'image.jpg', Path(tmp) / 'answer.txt'
+        img.write_bytes(image_bytes)
+        # read-only sandbox: the model only looks at the attached image. stdin must be empty:
+        # started from WSL the server inherits a pipe, and codex exec waits for its end
+        cmd = [shutil.which('codex') or 'codex', 'exec', '--skip-git-repo-check', '-s', 'read-only',
+               '-m', model, '-c', f'model_reasoning_effort={CODEX_EFFORT}', '-i', str(img),
+               '-o', str(answer), f'{SYSTEM} {text}']
+        out = subprocess.run(cmd, cwd=tmp, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                             timeout=timeout,
+                             encoding='utf-8')
+        if out.returncode != 0 or not answer.exists():
+            raise RuntimeError(out.stderr.strip()[-500:] or 'codex gave no answer')
+        return answer.read_text(encoding='utf-8')
+
+
 def ask_cli(model, text, image_bytes, timeout):
+    if model.startswith('gpt'):
+        return ask_codex(model, text, image_bytes, timeout)
     with tempfile.TemporaryDirectory() as tmp:
         (Path(tmp) / 'image.jpg').write_bytes(image_bytes)
         # --bare would skip the subscription login (API key only); an empty setting source list
@@ -34,7 +58,8 @@ def ask_cli(model, text, image_bytes, timeout):
                '--tools', 'Read', '--allowedTools', 'Read', '--no-session-persistence',
                '--strict-mcp-config', '--setting-sources', '', '--system-prompt', SYSTEM,
                f'Read the image file image.jpg. {text}']
-        out = subprocess.run(cmd, cwd=tmp, capture_output=True, text=True, timeout=timeout,
+        out = subprocess.run(cmd, cwd=tmp, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                             timeout=timeout,
                              shell=False, encoding='utf-8')
     if out.returncode != 0:
         raise RuntimeError(out.stderr.strip() or out.stdout.strip())

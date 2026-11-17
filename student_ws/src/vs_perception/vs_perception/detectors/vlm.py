@@ -42,7 +42,7 @@ _QUAD = re.compile(r'\[?\s*\(?\s*' + r'\s*,\s*'.join([f'({_NUMBER})'] * 4))
 
 def _box_format(model):
     name = model.lower()
-    if 'claude' in name:
+    if 'claude' in name or name.startswith('gpt'):  # no trained box convention: say the scale
         return 'claude'
     return 'gemma' if 'gemma' in name else 'glm' if 'glm' in name else 'qwen'
 

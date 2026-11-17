@@ -22,6 +22,8 @@ def generate_launch_description():
         DeclareLaunchArgument('tracker', default_value='csrt'),
         DeclareLaunchArgument('refiner', default_value='none'),
         DeclareLaunchArgument('detector_period', default_value='1.0'),
+        DeclareLaunchArgument('detector_model', default_value='',
+                              description='Weights variant, e.g. IDEA-Research/grounding-dino-base'),
         DeclareLaunchArgument('detect_on_loss', default_value='false',
                               description='Run the detector only while no track exists'),
         DeclareLaunchArgument('auto_start', default_value='false',
@@ -41,7 +43,8 @@ def generate_launch_description():
              parameters=[params, {'detector': arg('detector'), 'prompt': arg('prompt'),
                                   'tracker': arg('tracker'), 'refiner': arg('refiner'),
                                   'detector_period': arg('detector_period'),
-                                  'detect_on_loss': arg('detect_on_loss')}]),
+                                  'detect_on_loss': arg('detect_on_loss'),
+                                  'detector_model': arg('detector_model')}]),
         Node(package='vs_control', executable='ibvs_node', output='screen',
              parameters=[params, {'auto_start': arg('auto_start')}]),
     ])

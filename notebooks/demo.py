@@ -122,8 +122,26 @@ def _(mo):
     btn_light = mo.ui.run_button(label='set light')
     btn_clear = mo.ui.run_button(label='clear disturbances')
     gz_gui = mo.ui.switch(value=False, label='Gazebo GUI window (the lab world; costs GPU)')
-    return (btn_capture, btn_clear, btn_light, btn_lost, btn_occlude, btn_reference,
-            btn_servo, btn_start, gz_gui, light, occlusion)
+    # label -> (detector, model); VLMs are served by the host's Ollama
+    model_choice = mo.ui.dropdown(options={
+        'Grounding DINO tiny': ('grounding_dino', ''),
+        'Grounding DINO base': ('grounding_dino', 'IDEA-Research/grounding-dino-base'),
+        'OWLv2': ('owlv2', ''), 'YOLO-World': ('yolo_world', ''), 'YOLOE-11s': ('yoloe', ''),
+        'Florence-2': ('florence2', ''), 'SAM 3': ('sam3', ''),
+        'LocateAnything-3B': ('locate_anything', ''),
+        'Qwen3-VL 8B': ('vlm', 'qwen3-vl:8b-instruct'), 'Gemma 4 E4B': ('vlm', 'gemma4:e4b'),
+    }, value='Grounding DINO tiny', label='foundation model')
+    btn_model = mo.ui.run_button(label='load model')
+    return (btn_capture, btn_clear, btn_light, btn_lost, btn_model, btn_occlude, btn_reference,
+            btn_servo, btn_start, gz_gui, light, model_choice, occlusion)
+
+
+@app.cell
+def _(btn_model, demo, mo, model_choice, set_tick):
+    mo.stop(not btn_model.value, mo.md('*Swap the localisation model (first load downloads it)*'))
+    demo.set_detector(*model_choice.value)
+    set_tick(lambda t: t + 1)
+    return
 
 
 @app.cell
@@ -133,11 +151,12 @@ def _(demo, gz_gui):
 
 
 @app.cell
-def _(btn_capture, btn_clear, btn_light, btn_lost, btn_occlude, btn_reference, btn_servo,
-      btn_start, gz_gui, light, mo, occlusion, prompt_custom, prompt_preset, servo_prompt, start,
-      target):
+def _(btn_capture, btn_clear, btn_light, btn_lost, btn_model, btn_occlude, btn_reference,
+      btn_servo, btn_start, gz_gui, light, mo, model_choice, occlusion, prompt_custom,
+      prompt_preset, servo_prompt, start, target):
     mo.vstack([
         mo.hstack([mo.md('## Pipeline, step by step'), gz_gui], justify='space-between'),
+        mo.hstack([model_choice, btn_model], justify='start'),
         mo.hstack([target, start, prompt_preset], justify='start'),
         prompt_custom,
         mo.md(f'Prompt for the next reference: **"{servo_prompt}"**'),
