@@ -353,6 +353,8 @@ def main():
     ap.add_argument('config')
     ap.add_argument('--name', help='campaign folder under data/eval (default: config name)')
     ap.add_argument('--blocks', nargs='+', help='only these blocks')
+    ap.add_argument('--chunk', help="a named group of blocks from the config's 'chunks' "
+                                    "('post' = only benchmark + notebook)")
     ap.add_argument('--smoke', action='store_true', help='one short run per block')
     ap.add_argument('--keep-running', action='store_true', help='leave the containers up')
     args = ap.parse_args()
@@ -368,8 +370,14 @@ def main():
     (out / 'campaign.yaml').write_text(yaml.safe_dump(spec, sort_keys=False))
 
     blocks = {k: merge(spec.get('defaults', {}), v or {}) for k, v in spec['blocks'].items()}
-    if args.blocks:
+    if args.chunk and args.chunk != 'post':
+        args.blocks = spec['chunks'][args.chunk]
+    if args.chunk == 'post':
+        blocks = {}
+    elif args.blocks:
         blocks = {k: v for k, v in blocks.items() if k in args.blocks}
+    # Benchmark and notebook only for the whole campaign or the explicit 'post' chunk
+    post = args.chunk == 'post' or not (args.blocks or args.chunk)
     if args.smoke:
         for cfg in blocks.values():
             cfg['eval'].update(targets=['red_can'], starts=[1], timeout=40)
@@ -400,7 +408,7 @@ def main():
                 (out / f'{block}.error').write_text(str(exc))
                 failed.append(block)
                 fm.key = None
-        if spec.get('bench') and not args.blocks:
+        if spec.get('bench') and post:
             log('offline detector benchmark')
             fm.stop()
             ensure_vlm_server('claude')
@@ -413,7 +421,7 @@ def main():
                        capture=False)
             if bench.returncode != 0:
                 failed.append('bench')
-        if spec.get('notebook') and not args.blocks:
+        if spec.get('notebook') and post:
             log('executing the notebook')
             nb = sh(['docker', 'compose', 'run', '--rm', '-v', f'{REPO}:/repo', '-w', '/repo/notebooks',
                      '-e', f'VS_CAMPAIGN={name}', 'fm', 'bash', '-lc',

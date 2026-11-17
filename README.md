@@ -195,7 +195,11 @@ python3 scripts/run_campaign.py experiments/final.yaml           # ~600 runs, ab
 ```
 
 Results go to `data/eval/final/<block>/`; the same command continues an interrupted campaign
-(finished blocks have a `DONE` file). `notebooks/evaluation.ipynb` reads this folder.
+(finished blocks have a `DONE` file).
+
+The campaign is split into **chunks** that can run in separate sessions (`--chunk core`, then
+`latency`, `local`, `cloud`, and finally `post` for the offline benchmark and the notebook):
+`core` alone covers the required evaluation of section 2.5. `notebooks/evaluation.ipynb` reads this folder.
 
 **Offline benchmark** (`python -m vs_evaluation.bench_detectors --campaign <folder>`): the saved
 camera frames x all models x prompt formulations (category, attribute, synonym, indirect

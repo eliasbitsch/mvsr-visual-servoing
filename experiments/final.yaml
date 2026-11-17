@@ -63,6 +63,17 @@ blocks:
     launch: {detector: grounding_dino, detector_model: IDEA-Research/grounding-dino-base}
   det_yoloe: {launch: {detector: yoloe}}
 
+# Runnable one at a time (--chunk <name>, start_campaign.ps1 -Chunk <name>), in this order of
+# importance; finished blocks are skipped, so the chunks can be spread over several sessions.
+# 'post' (benchmark + notebook) needs the images of 'core' and should come last.
+chunks:
+  core: [main_dino_sam2, main_dino_csrt, rob_occl20, rob_occl40, rob_occl20_mid, rob_occl40_mid,
+         rob_light30, rob_light150, lost]
+  latency: [lat_p02, lat_p1, lat_p5, lat_p5_d1, lat_notracker]
+  local: [det_dino_base, det_owlv2, det_yolo_world, det_yoloe, det_florence2, det_sam3,
+          det_locate_anything, det_qwen3vl_8b, det_gemma4_e4b]
+  cloud: [det_opus55, det_gpt6_astra]
+
 # After the closed-loop blocks
 bench: true
 notebook: notebooks/evaluation.ipynb
