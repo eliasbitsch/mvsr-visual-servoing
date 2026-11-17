@@ -40,6 +40,9 @@ class PerceptionNode(Node):
             'image_topic': '/camera/image_raw', 'max_missed_detections': 3,
             'frame_buffer_size': 150, 'publish_debug_image': True,
             'detect_on_loss': False,
+            # Frames per second through tracker and features, 0 = every frame. The demo lowers
+            # it while the robot stands still: SAM 2 on every idle frame kept the GPU busy
+            'max_rate': 0.0,
         }
         for name, default in params.items():
             self.declare_parameter(name, default)
@@ -52,6 +55,8 @@ class PerceptionNode(Node):
         self.debug = p['publish_debug_image']
         self.detect_on_loss = p['detect_on_loss']
         self.device = resolve_device(p['device']) # auto detect device
+        self.max_rate = p['max_rate']
+        self.last_processed = 0.0
 
         self.get_logger().info(f'loading detector "{p["detector"]}" on {self.device} ...')
         t0 = time.monotonic()
@@ -106,6 +111,8 @@ class PerceptionNode(Node):
                 self.period = c.value
             elif c.name == 'detector_delay':
                 self.delay = c.value
+            elif c.name == 'max_rate':
+                self.max_rate = c.value
         return SetParametersResult(successful=True)
 
     def detector_loop(self):
@@ -188,6 +195,11 @@ class PerceptionNode(Node):
             self.seq += 1
             self.frames.append((self.seq, msg.header.stamp, img))
             self.latest = (self.seq, msg.header.stamp, img)
+
+        now = time.monotonic()
+        if self.max_rate > 0 and now - self.last_processed < 1.0 / self.max_rate:
+            return  # frame stays in the buffer for the detector replay
+        self.last_processed = now
 
         fresh, arrived = self.apply_detections()
         tracking = self.tracking

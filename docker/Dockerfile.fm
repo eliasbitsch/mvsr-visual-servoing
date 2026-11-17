@@ -55,7 +55,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ros-jazzy-foxgl
 # matplotlib>=3.9: the plain requirement was met by Ubuntu's copy (built against numpy 1)
 # through --system-site-packages, so the venv had none of its own
 RUN --mount=type=cache,target=/root/.cache/pip \
-    /opt/vs-venv/bin/pip install -c /opt/constraints.txt nbconvert ipykernel pyyaml \
+    /opt/vs-venv/bin/pip install -c /opt/constraints.txt nbconvert ipykernel pyyaml marimo \
       decord lmdb peft "matplotlib>=3.9"
 # LocateAnything's remote code needs transformers 4.57; its worker process puts this folder in
 # front of the venv (same torch), everything else keeps transformers 5.x

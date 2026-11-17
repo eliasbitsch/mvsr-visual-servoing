@@ -131,6 +131,26 @@ sporadically ("illegal memory access", HTTP 500 from Ollama). Then run Ollama na
 host with the Vulkan backend (`OLLAMA_LLM_LIBRARY=vulkan`, port 11434) and point
 `VS_VLM_URL=http://localhost:11434/v1` at it; `scripts/run_campaign.py` uses that host Ollama.
 
+### Live demo (marimo + Lichtblick)
+
+```bash
+scripts/demo.sh [detector] [tracker]      # WSL/Linux, default grounding_dino sam2
+scripts/demo.sh stop
+powershell -File scripts\demo.ps1         # Windows: also keeps WSL alive, opens both windows
+```
+
+Starts the simulation (headless), perception + IBVS, Lichtblick and the marimo app
+`notebooks/demo.py` (http://localhost:2718). The app runs the pipeline step by step with
+buttons (reference pose + detection, capture reference, start configuration, servo, safe-stop
+test, occlusion and light), shows a live flowchart of the pipeline, the measurements of every run
+and a session table; prompts come from presets or free text. A switch opens Gazebo's own window as
+a client of the running server.
+
+For a laptop GPU the demo runs lighter than the evaluation: camera 10 Hz, 2 ms physics steps and
+no shadows (set at runtime, the world file stays as given), perception throttled to 2 Hz while
+idle and 5 Hz while servoing, controller tolerances 1.5 s / 3 s. `scripts/perf_check.sh` shows CPU
+per container, GPU, real-time factor and topic rates, for bringing components up one at a time.
+
 ## 5. Evaluation
 
 The evaluation script (assignment section 2.5) runs every target x start configuration on its own:

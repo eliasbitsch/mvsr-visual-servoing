@@ -91,9 +91,12 @@ class Sam2Tracker(Tracker):
     _predictor = None
 
     def __init__(self, device='auto', weights='sam2.1_t.pt', min_score=0.05,
-                 refresh_interval=15, max_memory=4, **_):
+                 refresh_interval=15, max_memory=4, imgsz=640, half=True, **_):
         self.device = resolve_device(device)
         self.weights = weights
+        # 640 px + FP16 instead of 1024 px FP32: 83 instead of 693 ms per frame on the laptop
+        # GPU with a mask within 1 % (measured 17.11.); 1024 is SAM's training size
+        self.imgsz, self.half = imgsz, half
         self.min_score = min_score
         self.refresh_interval = refresh_interval
         self.max_memory = max_memory
@@ -115,7 +118,8 @@ class Sam2Tracker(Tracker):
         if cls._predictor is None:
             from ultralytics.models.sam.predict import SAM2DynamicInteractivePredictor
             cls._predictor = SAM2DynamicInteractivePredictor(
-                overrides=dict(task='segment', mode='predict', imgsz=1024, save=False,
+                overrides=dict(task='segment', mode='predict', imgsz=self.imgsz,
+                               half=self.half and self.device.startswith('cuda'), save=False,
                                verbose=False, conf=0.0, device=self.device,
                                model=weights_path(self.weights)),
                 max_obj_num=1)

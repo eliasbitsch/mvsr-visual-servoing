@@ -14,3 +14,4 @@ moodle/
 **/.DS_Store
 notebooks/figures/
 notebooks/.ipynb_checkpoints/
+notebooks/__marimo__/
