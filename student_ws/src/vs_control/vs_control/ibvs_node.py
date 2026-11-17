@@ -85,6 +85,8 @@ class IbvsNode(Node):
         self.twist_pub = self.create_publisher(TwistStamped, '~/camera_twist', 10)
         self.error_pub = self.create_publisher(Float64MultiArray, '~/error', 10)
         self.converged_pub = self.create_publisher(Bool, '~/converged', 10)
+        # Why the arm holds (safety, TF, stale or lost features): the evaluation records it
+        self.status_pub = self.create_publisher(String, '~/status', 10)
 
         self.switch = self.create_client(SwitchController, '/controller_manager/switch_controller')
         self.create_service(Trigger, '~/start', self.srv_start)
@@ -186,6 +188,7 @@ class IbvsNode(Node):
 
     def halt(self, reason):
         self.publish_joint_velocities(np.zeros(len(self.p['arm_joints'])))
+        self.status_pub.publish(String(data=reason))
         self.get_logger().warn(f'holding: {reason}', throttle_duration_sec=2.0)
 
     def target_state(self):

@@ -29,7 +29,7 @@ docker exec -i vs-lab bash <<'EOF'
 source /opt/ros/jazzy/setup.bash
 svc() { gz service -s /world/vs_world/$1 --reqtype $2 --reptype gz.msgs.Boolean --timeout 5000 --req "$3" >/dev/null; }
 svc set_physics gz.msgs.Physics 'max_step_size: 0.002, real_time_factor: 1.0'
-svc light_config gz.msgs.Light 'name: "sun", type: DIRECTIONAL, diffuse: {r: 0.85, g: 0.85, b: 0.85, a: 1}, specular: {r: 0.2, g: 0.2, b: 0.2, a: 1}, direction: {x: -0.3, y: 0.2, z: -0.9}, cast_shadows: false, intensity: 1.0'
+svc light_config gz.msgs.Light 'name: "sun", type: DIRECTIONAL, pose: {position: {z: 10}}, diffuse: {r: 0.85, g: 0.85, b: 0.85, a: 1}, specular: {r: 0.2, g: 0.2, b: 0.2, a: 1}, direction: {x: -0.3, y: 0.2, z: -0.9}, cast_shadows: false, intensity: 1.0'
 EOF
 
 echo "starting perception ($detector + $tracker) and the controller ..."

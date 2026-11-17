@@ -197,10 +197,15 @@ camera frames x all models x prompt formulations (category, attribute, synonym, 
 description, absent object). The ground-truth box is the projected object geometry; output
 `<campaign>/bench/results.csv` with IoU, correctness, false positives and latency per query.
 
-**Opus 5.5 as detector** goes through a logged-in agent CLI on the host
-(`python scripts/cli_vlm_server.py`, OpenAI-compatible on port 11436, CLI command set via
-`VLM_CLI`); `run_campaign.py` starts it on demand. Each call takes several seconds and counts
-against the subscription.
+**Cloud VLMs as detector** (Claude Opus 5.5, GPT-6-Astra) go through logged-in agent CLIs on
+the host (`python scripts/cli_vlm_server.py`, OpenAI-compatible on port 11436): `claude-*`
+models use the Claude Code CLI, `gpt-*` models the Codex CLI at medium reasoning effort.
+`run_campaign.py` starts it on demand. Each call takes 7-10 s and counts against the
+subscription (Opus: about 2.7 ct per call as API equivalent), so they are a comparison only.
+
+**Detector weights variant**: `detector_model:=IDEA-Research/grounding-dino-base` (launch argument
+and runtime parameter); the perception node can also swap detectors at runtime by setting
+`detector` / `detector_model`, which the demo's model dropdown uses.
 
 ## 6. Topics
 
@@ -221,6 +226,8 @@ against the subscription.
 - Qwen3-VL (Alibaba, Apache 2.0) and Gemma 4 (Google, Apache 2.0) served by Ollama (MIT).
 - SAM 3 (Meta, SAM licence, gated on Hugging Face), Florence-2 (Microsoft, MIT) via transformers.
 - LocateAnything-3B (NVIDIA, non-commercial research licence), remote code from Hugging Face.
+- YOLOE (Ultralytics, AGPL-3.0); Grounding DINO base (IDEA-Research, Apache 2.0).
+- GPT-6-Astra (OpenAI) through the Codex CLI, as a comparison only.
 - Opus 5.5 (Anthropic) through the agent CLI, as a comparison only.
 - Lichtblick (web GUI, MPL-2.0), foxglove_bridge (MIT).
 - IBVS features: O. Tahri, F. Chaumette, "Point-based and region-based image moments for visual

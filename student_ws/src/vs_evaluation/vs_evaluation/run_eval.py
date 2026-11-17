@@ -35,7 +35,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import CameraInfo, Image
-from std_msgs.msg import Bool, Float64MultiArray
+from std_msgs.msg import Bool, Float64MultiArray, String
 from std_srvs.srv import Trigger
 from vs_interfaces.msg import ObjectFeatures
 from vs_sim.motion import RobotMover
@@ -51,10 +51,12 @@ TARGETS = {
 # The two lights of vs_world.sdf. light_config replaces the whole light, so every field is restated;
 # without intensity Gazebo uses 0, which switches the light off.
 LIGHTS = {
-    'sun': 'type: DIRECTIONAL, diffuse: {r: 0.85, g: 0.85, b: 0.85, a: 1}, '
+    # Full spec incl. pose as in worlds/vs_world.sdf: fields left out may be reset by Gazebo
+    'sun': 'type: DIRECTIONAL, pose: {position: {z: 10}}, diffuse: {r: 0.85, g: 0.85, b: 0.85, a: 1}, '
            'specular: {r: 0.2, g: 0.2, b: 0.2, a: 1}, direction: {x: -0.3, y: 0.2, z: -0.9}, '
            'cast_shadows: true',
-    'lab_light': 'type: POINT, diffuse: {r: 0.4, g: 0.4, b: 0.4, a: 1}, '
+    'lab_light': 'type: POINT, pose: {position: {x: 0.6, y: -0.4, z: 1.6}}, '
+                 'diffuse: {r: 0.4, g: 0.4, b: 0.4, a: 1}, '
                  'specular: {r: 0.1, g: 0.1, b: 0.1, a: 1}, range: 6, attenuation_constant: 0.6, '
                  'attenuation_linear: 0.05, attenuation_quadratic: 0.01',
 }
@@ -68,21 +70,57 @@ SERIES_FIELDS = ['t', 'ibvs_err_fresh', 'converged', 'feat_valid', 'feat_source'
                  'u', 'v', 'area', 'angle', 'e_x', 'e_y', 'e_area', 'e_angle',
                  'v_x', 'v_y', 'v_z', 'w_x', 'w_y', 'w_z',
                  'gt_ex', 'gt_ey', 'gt_ez', 'gt_rx', 'gt_ry', 'gt_rz', 'gt_et', 'gt_er',
-                 'cam_x', 'cam_y', 'cam_z', 'cam_qx', 'cam_qy', 'cam_qz', 'cam_qw']
+                 'cam_x', 'cam_y', 'cam_z', 'cam_qx', 'cam_qy', 'cam_qz', 'cam_qw', 'sim_t']
 
 SUMMARY_FIELDS = ['target', 'start', 'detector', 'tracker', 'detector_period', 'detector_delay',
                   'occlusion', 'occlusion_after', 'light', 'success', 'converged', 'conv_time_s', 'outcome',
                   'final_pos_err_m', 'final_rot_err_deg', 'final_rot_err_raw_deg',
-                  'final_feature_err', 'detector_calls', 'lost_stop_time_s', 'drift_after_loss_m']
+                  'final_feature_err', 'detector_calls', 'lost_stop_time_s', 'drift_after_loss_m',
+                  'conv_time_sim_s', 'real_time_factor', 'stop_reason', 'detector_model']
+
+
+def _rotvec_to_matrix(r):
+    theta = float(np.linalg.norm(r))
+    if theta < 1e-12:
+        return np.eye(3)
+    k = np.asarray(r) / theta
+    kx = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+    return np.eye(3) + math.sin(theta) * kx + (1 - math.cos(theta)) * kx @ kx
+
+
+def _angle(R):
+    return math.acos(max(-1.0, min(1.0, (np.trace(R) - 1.0) / 2.0)))
 
 
 def symmetric_rot_err(rx, ry, rz, symmetry):
-    """Rotation error that ignores what the target's symmetry makes invisible (small-tilt approx.)."""
-    if symmetry == 'round':
-        return math.hypot(rx, ry)
-    if symmetry == 'pi':
-        rz = (rz + math.pi / 2) % math.pi - math.pi / 2
-    return math.sqrt(rx * rx + ry * ry + rz * rz)
+    """Rotation error (rad) that ignores what the target's symmetry makes invisible.
+
+    (rx, ry, rz) is the rotation vector of R_d^T R_c in the desired camera frame (lab ground
+    truth). Exact angles: the earlier small-tilt version overstated the error at large yaw.
+    """
+    if any(math.isnan(v) for v in (rx, ry, rz)):
+        return math.nan
+    R = _rotvec_to_matrix((rx, ry, rz))
+    if symmetry == 'round':  # yaw invisible: angle between the optical axes only
+        return math.acos(max(-1.0, min(1.0, R[2, 2])))
+    if symmetry == 'pi':  # the box looks the same after half a turn about the optical axis
+        return min(_angle(R), _angle(np.diag([-1.0, -1.0, 1.0]) @ R))
+    return _angle(R)
+
+
+def stop_reason_label(status):
+    """Outcome label from the controller's last halt reason (ibvs_node ~/status)."""
+    s = status.lower()
+    if any(k in s for k in ('collision', 'below', 'workspace')):
+        return 'safety stop'
+    if s.startswith('tf'):
+        return 'tf error'
+    if 'stale' in s:
+        return 'features stale'
+    if 'lost' in s:
+        return 'target lost'
+    return 'controller stopped'
+
 
 
 def gz_service(service, reqtype, req, attempts=3):
@@ -149,6 +187,9 @@ class Recorder(Node):
         self.err_time = 0.0
         self.converged = False
         self.clock_seen = 0.0
+        self.sim_now = math.nan
+        self.status = ''
+        self.hold_time = 1.0  # read from the controller in main()
         self.rows = None
         self.t0 = 0.0
         self.detections = 0
@@ -168,9 +209,9 @@ class Recorder(Node):
                                  lambda m: setattr(self, 'image', m), qos_profile_sensor_data)
         self.create_subscription(CameraInfo, '/camera/camera_info',
                                  lambda m: setattr(self, 'K', list(m.k)), qos_profile_sensor_data)
-        self.create_subscription(Clock, '/clock',
-                                 lambda _: setattr(self, 'clock_seen', time.monotonic()),
-                                 qos_profile_sensor_data)
+        self.create_subscription(Clock, '/clock', self.on_clock, qos_profile_sensor_data)
+        self.create_subscription(String, '/ibvs_node/status',
+                                 lambda m: setattr(self, 'status', m.data), 10)
         self.create_timer(1.0 / SAMPLE_RATE, self.sample)
         self.cli = {n: self.create_client(Trigger, f'/ibvs_node/{n}')
                     for n in ('start', 'stop', 'capture_reference')}
@@ -183,6 +224,10 @@ class Recorder(Node):
         self.feat = m
         if m.source == 'detector':
             self.detections += 1
+
+    def on_clock(self, m):
+        self.clock_seen = time.monotonic()
+        self.sim_now = m.clock.sec + m.clock.nanosec * 1e-9
 
     def on_error(self, m):
         self.err, self.err_fresh, self.err_time = list(m.data), True, time.monotonic()
@@ -202,6 +247,7 @@ class Recorder(Node):
         row += g[:8]
         row += ([c.position.x, c.position.y, c.position.z, c.orientation.x, c.orientation.y,
                  c.orientation.z, c.orientation.w] if c else [nan] * 7)
+        row.append(self.sim_now)
         self.rows.append(row)
         self.err_fresh = False
 
@@ -234,8 +280,16 @@ class Recorder(Node):
         fut = cli.call_async(SetParameters.Request(parameters=[Parameter(name=name, value=pv)]))
         rclpy.spin_until_future_complete(self, fut, timeout_sec=10.0)
 
+    def ibvs_param(self, name, default):
+        if not self.ibvs_get_cli.wait_for_service(timeout_sec=10.0):
+            return default
+        fut = self.ibvs_get_cli.call_async(GetParameters.Request(names=[name]))
+        rclpy.spin_until_future_complete(self, fut, timeout_sec=10.0)
+        values = fut.result().values if fut.result() else []
+        return values[0].double_value if values and values[0].type == 3 else default
+
     def perception_params(self):
-        names = ['detector', 'tracker', 'detector_period', 'detector_delay']
+        names = ['detector', 'tracker', 'detector_period', 'detector_delay', 'detector_model']
         self.get_cli.wait_for_service(timeout_sec=10.0)
         fut = self.get_cli.call_async(GetParameters.Request(names=names))
         rclpy.spin_until_future_complete(self, fut, timeout_sec=10.0)
@@ -243,13 +297,6 @@ class Recorder(Node):
         for n, v in zip(names, fut.result().values):
             out[n] = v.string_value if v.type == ParameterType.PARAMETER_STRING else v.double_value
         return out
-
-    def ibvs_gain(self):
-        if not self.ibvs_get_cli.wait_for_service(timeout_sec=10.0):
-            raise RuntimeError('ibvs_node get_parameters not available')
-        fut = self.ibvs_get_cli.call_async(GetParameters.Request(names=['gain']))
-        rclpy.spin_until_future_complete(self, fut, timeout_sec=10.0)
-        return fut.result().values[0].double_value
 
     def wait_target(self, prompt, timeout, hold=1.0, max_gap=2.0):
         """Wait until the target with this prompt has been seen for `hold` seconds.
@@ -304,9 +351,13 @@ def stop_metrics(rows, lost_t):
 def run_one(rec, symmetry, args, target_cfg):
     """Servo from the current pose. Returns the summary values and the recorded rows."""
     rec.spin_for(0.3)  # drop converged messages still queued from the previous run
+    # Per-run state: values left from the previous run gave wrong final errors and labels
+    rec.err, rec.err_fresh, rec.status = None, False, ''
     rec.rows, rec.t0, rec.converged, rec.detections = [], time.monotonic(), False, 0
+    rec.err_time = rec.t0
+    sim0 = rec.sim_now
     rec.call('start')
-    conv_time = lost_t = mover = occluder = None
+    conv_time = conv_sim = lost_t = mover = occluder = None
     outcome = 'timeout'
     moved = threading.Event()
     while time.monotonic() - rec.t0 < args.timeout:
@@ -324,19 +375,24 @@ def run_one(rec, symmetry, args, target_cfg):
                     moved.set()
                 mover = threading.Thread(target=lose, daemon=True)
                 mover.start()
-            if lost_t is None and moved.is_set():
+                # Loss time = when the move is issued: the earliest the target can vanish, so
+                # stop time and drift are never understated (the end of the service call came
+                # later; the lab's ground truth does not see the moved model at all)
                 lost_t = elapsed
             if lost_t is not None and elapsed > lost_t + 5.0:
                 break
             continue
         if rec.converged:
-            conv_time, outcome = elapsed, 'converged'
+            # The controller reports convergence after holding the error below its threshold
+            # for converged_hold_time; the convergence time is when that hold began
+            conv_time, outcome = max(0.0, elapsed - rec.hold_time), 'converged'
+            conv_sim = rec.sim_now - sim0 - rec.hold_time
             break
         # The controller decides about a lost target (lost_timeout, stale features); its error
         # stream stopping is the sign. A stricter check here ended runs of slow detectors at
         # every short tracker gap the controller rides out.
         if elapsed > 2.0 and time.monotonic() - rec.err_time > 2.0:
-            outcome = 'target lost'
+            outcome = stop_reason_label(rec.status)
             break
     rec.spin_for(0.5)  # a few rows in the final pose
     rec.call('stop')
@@ -356,6 +412,10 @@ def run_one(rec, symmetry, args, target_cfg):
                       success=int(stop_t != '' and stop_t < 1.0 and drift < 0.005))
         return result, rows
     g = rec.gt or [math.nan] * 8
+    wall = time.monotonic() - rec.t0
+    rtf = (rec.sim_now - sim0) / wall if wall > 0 and not math.isnan(sim0) else math.nan
+    result.update(conv_time_sim_s=round(conv_sim, 2) if conv_sim is not None else '',
+                  real_time_factor=round(rtf, 3), stop_reason=rec.status)
     last = rows[-1] if rows else None
     feat_err = (math.sqrt(sum(x * x for x in last[9:13] if not math.isnan(x))) if last else math.nan)
     rot = math.degrees(symmetric_rot_err(g[3], g[4], g[5], symmetry))
@@ -408,6 +468,7 @@ def main():
     rclpy.init()
     mover, rec = RobotMover(), Recorder()
     mover.ready()
+    rec.hold_time = rec.ibvs_param('converged_hold_time', 1.0)
 
     def configure_perception(prompt=None):
         # Re-applied before every run: a respawned perception node starts with its defaults
@@ -423,14 +484,17 @@ def main():
         rec.set_param('feature_timeout', args.feature_timeout, node='ibvs')
     # The campaign runner keeps the stack between blocks with the same launch config, so a gain
     # set here must not leak into the next block: remember the node's value and restore it
-    gain_before = rec.ibvs_gain()
+    gain_before = rec.ibvs_param('gain', None)
     if args.gain is not None:
+        if gain_before is None:  # could not restore it afterwards
+            raise RuntimeError('ibvs_node gain not readable, refusing to change it')
         rec.set_param('gain', args.gain, node='ibvs')
     params = rec.perception_params()
     with open(os.path.join(out, 'config.json'), 'w') as fh:
-        json.dump({**vars(args), 'perception': params, 'ibvs_gain': rec.ibvs_gain()}, fh,
-                  indent=2)
-    fixed = {'detector': params['detector'], 'tracker': params['tracker'],
+        json.dump({**vars(args), 'perception': params,
+                   'ibvs_gain': rec.ibvs_param('gain', math.nan)}, fh, indent=2)
+    fixed = {'detector': params['detector'], 'detector_model': params.get('detector_model', ''),
+             'tracker': params['tracker'],
              'detector_period': params['detector_period'],
              'detector_delay': params['detector_delay'],
              'occlusion': args.occlusion, 'occlusion_after': args.occlusion_after,

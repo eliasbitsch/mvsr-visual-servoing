@@ -426,6 +426,42 @@ class Demo(Recorder):
             proc.terminate()
             print('Gazebo GUI closed, the simulation keeps running headless')
 
+    def set_detector(self, name, model='', timeout=900.0):
+        """Swap the localisation model at runtime (perception frees the old one first).
+
+        model: weights variant (e.g. IDEA-Research/grounding-dino-base) or, for name='vlm',
+        the model served by Ollama (e.g. gemma4:e4b). The first load of a model downloads it.
+        """
+        from rcl_interfaces.msg import Parameter as RosParam, ParameterType, ParameterValue
+        from rcl_interfaces.srv import GetParameters, SetParameters
+
+        def string(v):
+            return ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=v)
+        want = f'{name}|{model}'
+        req = SetParameters.Request(parameters=[RosParam(name='detector', value=string(name)),
+                                                RosParam(name='detector_model',
+                                                         value=string(model))])
+        self.set_cli.wait_for_service(timeout_sec=30.0)
+        fut = self.set_cli.call_async(req)
+        rclpy.spin_until_future_complete(self, fut, timeout_sec=10.0)
+        t0, state = time.monotonic(), ''
+        while time.monotonic() - t0 < timeout:
+            fut = self.get_cli.call_async(GetParameters.Request(names=['detector_loaded']))
+            rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
+            state = fut.result().values[0].string_value if fut.result() else ''
+            if state == want or state.startswith('failed'):
+                break
+            self.spin_for(1.0)
+        if state != want:
+            print(f'switch to {name} {model} did not finish: {state or "timeout"}')
+            return False
+        self.params = self.perception_params()
+        self.params['detector'] = model or name  # show the served model for VLMs
+        print(f'model {model or name} ready after {time.monotonic() - t0:.0f} s')
+        if self.text:
+            self.set_param('prompt', self.text)  # fresh detection with the new model
+        return True
+
     def set_latency(self, period=None, delay=None):
         """Detector period and an artificial extra delay per call (inference-time study)."""
         if period is not None:
