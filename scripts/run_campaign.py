@@ -21,7 +21,9 @@ from pathlib import Path
 import yaml
 
 REPO = Path(__file__).resolve().parent.parent
-COMPOSE = 'docker-compose.yml:docker-compose.fm.yml:docker-compose.wsl.yml'
+# Same compose files as the shell (Linux, AMD, ...); the WSL set is only the default
+COMPOSE = os.environ.get('COMPOSE_FILE',
+                         'docker-compose.yml:docker-compose.fm.yml:docker-compose.wsl.yml')
 ROS_ENV = ('source /opt/ros/jazzy/setup.bash && source /ws/install/setup.bash && '
            'source /ws/student/install/setup.bash')
 # The Ollama on the Windows host (Vulkan): llama.cpp's CUDA kernels crash sporadically on this
@@ -30,6 +32,9 @@ OLLAMA_URL = 'http://localhost:11434'
 CLI_VLM_URL = 'http://localhost:11436'
 MIN_FREE_GB = 3.0
 RESUME_FREE_GB = 8.0
+# Laptop GPU: after hours at the limit it throttles, and later blocks would get slower
+# latencies than earlier ones; cool down between blocks instead
+GPU_HOT_C, GPU_COOL_C, MAX_COOL_WAIT = 85, 78, 15 * 60
 MAX_MEMORY_WAIT = 2 * 3600
 LOG = None
 
@@ -198,6 +203,26 @@ def eval_args(opts):
     return args
 
 
+def gpu_temp():
+    out = sh('nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader')
+    try:
+        return int(out.stdout.strip().splitlines()[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def cool_down(fm):
+    temp = gpu_temp()
+    if temp is None or temp < GPU_HOT_C:
+        return
+    log(f'GPU at {temp} C: stopping the stack until it is below {GPU_COOL_C} C')
+    fm.stop()
+    end = time.time() + MAX_COOL_WAIT
+    while time.time() < end and (gpu_temp() or 0) >= GPU_COOL_C:
+        time.sleep(30)
+    log(f'GPU at {gpu_temp()} C, continuing')
+
+
 def wait_for_memory(fm):
     """Something else (another job on the host) took the RAM: free ours, wait, then resume."""
     log(f'less than {MIN_FREE_GB} GB RAM free: stopping the containers and waiting')
@@ -240,6 +265,7 @@ def run_block(name, cfg, out_dir, fm, attempts=6):
         log(f'{name}: done, skipped')
         return True
     host_dir.mkdir(parents=True, exist_ok=True)
+    cool_down(fm)
     ensure_vlm_server(cfg['launch'].get('vlm_model'))
     container_dir = f'/root/vs_data/eval/{out_dir}/{name}'
     cmd = (f'{ROS_ENV} && ros2 run vs_evaluation run_eval --resume {container_dir} '
