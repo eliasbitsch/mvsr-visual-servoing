@@ -231,6 +231,7 @@ class Recorder(Node):
 
     def on_error(self, m):
         self.err, self.err_fresh, self.err_time = list(m.data), True, time.monotonic()
+        self.status = ''  # the controller is active again: an earlier halt reason no longer applies
 
     def sample(self):
         if self.rows is None:
@@ -461,7 +462,16 @@ def main():
     done = set()
     if os.path.exists(summary_path):
         with open(summary_path) as fh:
-            done = {(r['target'], int(r['start'])) for r in csv.DictReader(fh)}
+            reader = csv.DictReader(fh)
+            old_rows = list(reader)
+        done = {(r['target'], int(r['start'])) for r in old_rows}
+        if reader.fieldnames and reader.fieldnames != SUMMARY_FIELDS:
+            # Started with an older run_eval (fewer columns): rewrite under the current header,
+            # the new columns stay empty for the old rows, instead of appending misaligned rows
+            with open(summary_path, 'w', newline='') as fh:
+                writer = csv.DictWriter(fh, SUMMARY_FIELDS, extrasaction='ignore')
+                writer.writeheader()
+                writer.writerows(old_rows)
 
     rclpy.init()
     mover, rec = RobotMover(), Recorder()

@@ -167,9 +167,14 @@ Run it while the simulation and `fm` (with the tracker you want to evaluate) are
 
 | File | Content |
 |---|---|
-| `summary.csv` | one row per run: success, converged, convergence time, final position and rotation error (raw and with the target's symmetry), final feature error, outcome (converged, timeout, target lost, not detected) |
+| `summary.csv` | one row per run: success, converged, convergence time (wall and simulation time), final position and rotation error (raw and with the target's symmetry), final feature error, real-time factor, outcome (converged, timeout, target lost, features stale, safety stop, tf error, not detected, no reference) and the controller's halt reason (`stop_reason`) |
 | `runs/<target>_S<n>.csv` | time series: features, feature error, commanded camera twist, ground-truth pose error, camera pose |
 | `config.json` | the arguments of the run |
+
+Convergence time runs from the start until the error entered the controller's threshold; the
+1 s hold the controller waits before reporting convergence is not included. Results recorded
+before commit 779e806 included it and read about 1 s longer. Older `summary.csv` files get the
+new columns (empty) when a block is resumed.
 
 Success means converged within the timeout (60 s) and within 5 mm and 2 deg of the reference pose.
 Round objects (can, cup, ball) have no observable yaw, so their rotation error ignores it; the box
