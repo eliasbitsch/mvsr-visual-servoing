@@ -177,6 +177,7 @@ class Recorder(Node):
         self.set_cli = self.create_client(SetParameters, '/perception_node/set_parameters')
         self.ibvs_set_cli = self.create_client(SetParameters, '/ibvs_node/set_parameters')
         self.get_cli = self.create_client(GetParameters, '/perception_node/get_parameters')
+        self.ibvs_get_cli = self.create_client(GetParameters, '/ibvs_node/get_parameters')
 
     def on_feat(self, m):
         self.feat = m
@@ -242,6 +243,13 @@ class Recorder(Node):
         for n, v in zip(names, fut.result().values):
             out[n] = v.string_value if v.type == ParameterType.PARAMETER_STRING else v.double_value
         return out
+
+    def ibvs_gain(self):
+        if not self.ibvs_get_cli.wait_for_service(timeout_sec=10.0):
+            raise RuntimeError('ibvs_node get_parameters not available')
+        fut = self.ibvs_get_cli.call_async(GetParameters.Request(names=['gain']))
+        rclpy.spin_until_future_complete(self, fut, timeout_sec=10.0)
+        return fut.result().values[0].double_value
 
     def wait_target(self, prompt, timeout, hold=1.0, max_gap=2.0):
         """Wait until the target with this prompt has been seen for `hold` seconds.
@@ -381,6 +389,8 @@ def main():
                          'for runs without tracker, else the run ends at the first gap')
     ap.add_argument('--lose-target-after', type=float,
                     help='move the target out of view after this many seconds (safe stop test)')
+    ap.add_argument('--gain', type=float,
+                    help='IBVS gain lambda for this evaluation (gain study); restored afterwards')
     ap.add_argument('--label', default='run', help='name part of the output folder')
     ap.add_argument('--resume', help='output folder of an interrupted run: append, skip done runs')
     ap.add_argument('--out', default='/root/vs_data/eval')
@@ -411,9 +421,15 @@ def main():
     configure_perception()
     if args.feature_timeout is not None:
         rec.set_param('feature_timeout', args.feature_timeout, node='ibvs')
+    # The campaign runner keeps the stack between blocks with the same launch config, so a gain
+    # set here must not leak into the next block: remember the node's value and restore it
+    gain_before = rec.ibvs_gain()
+    if args.gain is not None:
+        rec.set_param('gain', args.gain, node='ibvs')
     params = rec.perception_params()
     with open(os.path.join(out, 'config.json'), 'w') as fh:
-        json.dump({**vars(args), 'perception': params}, fh, indent=2)
+        json.dump({**vars(args), 'perception': params, 'ibvs_gain': rec.ibvs_gain()}, fh,
+                  indent=2)
     fixed = {'detector': params['detector'], 'tracker': params['tracker'],
              'detector_period': params['detector_period'],
              'detector_delay': params['detector_delay'],
@@ -479,6 +495,8 @@ def main():
     finally:
         rec.call('stop')
         restore(args)
+        if args.gain is not None:
+            rec.set_param('gain', gain_before, node='ibvs')
     print(f'results in {out}', flush=True)
     rclpy.shutdown()
 

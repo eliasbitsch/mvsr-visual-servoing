@@ -21,6 +21,14 @@ blocks:
   # Safe stop: target leaves the view mid-run
   lost: {eval: {lose_target_after: 3, starts: [1, 3, 5]}}
 
+  # Gain study: lambda vs convergence time and overshoot (main_dino_sam2 is lambda = 0.6).
+  # red_can has no yaw, blue_box adds it. Same launch config as main: no model reload, run_eval
+  # restores the previous gain after each block
+  gain_0p3: {eval: {gain: 0.3, targets: [red_can, blue_box]}}
+  gain_1p0: {eval: {gain: 1.0, targets: [red_can, blue_box]}}
+  gain_1p5: {eval: {gain: 1.5, targets: [red_can, blue_box]}}
+  gain_2p5: {eval: {gain: 2.5, targets: [red_can, blue_box]}}
+
   # Classic tracker as comparison
   main_dino_csrt:
     launch: {tracker: csrt, detect_on_loss: false}
