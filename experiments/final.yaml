@@ -29,6 +29,9 @@ blocks:
   lat_p02:
     launch: {detect_on_loss: false}
     eval: {detector_period: 0.2}
+  lat_p1:
+    launch: {detect_on_loss: false}
+    eval: {detector_period: 1}
   lat_p5:
     launch: {detect_on_loss: false}
     eval: {detector_period: 5}
@@ -52,6 +55,13 @@ blocks:
   det_opus55:
     launch: {detector: vlm, vlm_model: claude-opus-5-5}
     eval: {timeout: 90}
+  det_gpt6_astra:
+    launch: {detector: vlm, vlm_model: gpt-6-astra}
+    eval: {timeout: 90}
+  # Added 17.11.: same family, larger model; real-time detector with its own masks
+  det_dino_base:
+    launch: {detector: grounding_dino, detector_model: IDEA-Research/grounding-dino-base}
+  det_yoloe: {launch: {detector: yoloe}}
 
 # After the closed-loop blocks
 bench: true

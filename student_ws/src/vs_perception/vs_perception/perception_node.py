@@ -14,6 +14,7 @@ import cv2
 import rclpy
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.time import Time
 from sensor_msgs.msg import CompressedImage, Image
@@ -43,6 +44,10 @@ class PerceptionNode(Node):
             # Frames per second through tracker and features, 0 = every frame. The demo lowers
             # it while the robot stands still: SAM 2 on every idle frame kept the GPU busy
             'max_rate': 0.0,
+            # Variant of the detector's weights, e.g. IDEA-Research/grounding-dino-base ('' = default)
+            'detector_model': '',
+            # Set by the node itself: "<detector>|<model>" once that detector is loaded
+            'detector_loaded': '',
         }
         for name, default in params.items():
             self.declare_parameter(name, default)
@@ -60,9 +65,10 @@ class PerceptionNode(Node):
 
         self.get_logger().info(f'loading detector "{p["detector"]}" on {self.device} ...')
         t0 = time.monotonic()
-        self.detector = DETECTORS.create(p['detector'], device=self.device,
-                                         score_threshold=p['score_threshold'])
-        self.detector.load()
+        self.score_threshold = p['score_threshold']
+        self.det_name, self.det_model = p['detector'], p['detector_model']
+        self.reload_detector = threading.Event()
+        self.detector = self.create_detector(self.det_name, self.det_model)
         self.refiner = REFINERS.create(p['refiner'], device=self.device)
         self.refiner.load()
         self.tracker_name = p['tracker']
@@ -97,7 +103,40 @@ class PerceptionNode(Node):
         self.add_on_set_parameters_callback(self.on_params)
 
         self._stop = threading.Event()
+        self.mark_loaded()
         threading.Thread(target=self.detector_loop, daemon=True).start()
+
+    def create_detector(self, name, model):
+        # model: weights variant (model_id) or, for the VLM detector, the served model name
+        opts = {'model_id': model, 'model': model} if model else {}
+        det = DETECTORS.create(name, device=self.device, score_threshold=self.score_threshold,
+                               **opts)
+        det.load()
+        return det
+
+    def mark_loaded(self):
+        self.set_parameters([Parameter('detector_loaded', Parameter.Type.STRING,
+                                       f'{self.det_name}|{self.det_model}')])
+
+    def switch_detector(self):
+        """Runs in the detector thread: free the old model, load the requested one."""
+        self.reload_detector.clear()
+        t0 = time.monotonic()
+        self.get_logger().info(f'switching detector to "{self.det_name}" {self.det_model}')
+        old, self.detector = self.detector, None
+        del old
+        try:
+            import gc
+
+            import torch
+            gc.collect()
+            torch.cuda.empty_cache()
+        except ImportError:
+            pass
+        self.detector = self.create_detector(self.det_name, self.det_model)
+        self.track_box = None  # the next detection comes from the new model
+        self.mark_loaded()
+        self.get_logger().info(f'detector ready after {time.monotonic() - t0:.1f} s')
 
     def on_params(self, changes):
         for c in changes:
@@ -113,11 +152,28 @@ class PerceptionNode(Node):
                 self.delay = c.value
             elif c.name == 'max_rate':
                 self.max_rate = c.value
+            elif c.name in ('detector', 'detector_model') and hasattr(self, 'reload_detector'):
+                if c.name == 'detector':
+                    self.det_name = c.value
+                else:
+                    self.det_model = c.value
+                self.reload_detector.set()
         return SetParametersResult(successful=True)
 
     def detector_loop(self):
         next_run = 0.0
         while not self._stop.is_set():
+            if self.reload_detector.is_set():
+                try:
+                    self.switch_detector()
+                except Exception as exc:  # keep the node alive; report through the status
+                    self.get_logger().error(f'detector switch failed: {exc}')
+                    self.set_parameters([Parameter('detector_loaded', Parameter.Type.STRING,
+                                                   f'failed|{exc}'[:300])])
+                continue
+            if self.detector is None:
+                time.sleep(0.05)
+                continue
             with self.latest_lock:
                 frame = self.latest
             # detect_on_loss: the model only runs while there is no track to follow
@@ -132,7 +188,10 @@ class PerceptionNode(Node):
             try:
                 dets = self.detector.detect(img, prompt)
             except Exception as exc:  # keep the node alive, the tracker may still run
-                self.get_logger().error(f'detector failed: {exc}')
+                # OSError covers timeouts and refused connections of the VLM servers: transient,
+                # not a fault of the stack (the evaluation restarts the stack on 'detector failed')
+                kind = 'detector request failed' if isinstance(exc, OSError) else 'detector failed'
+                self.get_logger().error(f'{kind}: {exc}')
                 dets = []
             if self.delay > 0:
                 time.sleep(self.delay)
@@ -259,7 +318,9 @@ class PerceptionNode(Node):
             color = (0, 255, 0) if f.source == 'detector' else (255, 200, 0)
             cv2.rectangle(vis, (x0, y0), (x1, y1), color, 2)
             cv2.circle(vis, (int(f.u), int(f.v)), 4, color, -1)
-        text = (f'{self.detector.registry_name}+{self.tracker_name} "{self.prompt}" {f.source} '
+        # det_name, not self.detector: that is None while a new detector loads
+        model = self.det_model.rsplit('/', 1)[-1] if self.det_model else self.det_name
+        text = (f'{model}+{self.tracker_name} "{self.prompt}" {f.source} '
                 f'lat {f.detector_latency * 1000:.0f} ms age {f.detection_age:.2f} s')
         cv2.putText(vis, text, (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         return vis

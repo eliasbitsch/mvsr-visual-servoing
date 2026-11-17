@@ -123,7 +123,7 @@ class Fm:
                         for k, v in launch.items() if not k.startswith('vlm_'))
         env = []
         if launch.get('vlm_model'):
-            url = CLI_VLM_URL if 'claude' in launch['vlm_model'] else OLLAMA_URL
+            url = CLI_VLM_URL if launch['vlm_model'].startswith(('claude', 'gpt')) else OLLAMA_URL
             env = ['-e', f'VS_VLM_URL={url}/v1', '-e', f'VS_VLM_MODEL={launch["vlm_model"]}']
         cmd = ('cd /ws/student && colcon build --symlink-install && source install/setup.bash '
                f'&& exec ros2 launch vs_bringup servo.launch.py {args}')
@@ -167,7 +167,7 @@ def unload_host_ollama():
 
 def ensure_vlm_server(model):
     """Start only what the block needs; everything else stays off (VRAM, quota)."""
-    if model and 'claude' in model:
+    if model and model.startswith(('claude', 'gpt')):
         if not http_ok(f'{CLI_VLM_URL}/v1/models'):
             log('starting the CLI VLM shim on the host')
             win_path = sh(['wslpath', '-w', str(REPO / 'scripts' / 'cli_vlm_server.py')]
@@ -176,7 +176,7 @@ def ensure_vlm_server(model):
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              start_new_session=True)
             wait_for(lambda: http_ok(f'{CLI_VLM_URL}/v1/models'), 60, 'CLI VLM shim')
-    if model and 'claude' not in model:
+    if model and not model.startswith(('claude', 'gpt')):
         # Briefly gone while the driver resets the GPU after a fault
         wait_for(lambda: http_ok(f'{OLLAMA_URL}/api/tags'), 180, f'Ollama at {OLLAMA_URL}')
         if model != 'ollama':
@@ -237,7 +237,11 @@ def wait_for_memory(fm):
     raise MemoryError(f'RAM not back above {RESUME_FREE_GB} GB within {MAX_MEMORY_WAIT // 60} min')
 
 
-FAULTS = ('detector failed', 'CUDA error', 'illegal memory access', 'illegal instruction')
+# Infrastructure faults, not model results: the runs since the last check are discarded and
+# repeated on a fresh stack. 'process has died': a crashed perception node (often the GPU) would
+# otherwise turn the following runs into "not detected" and count against the model.
+FAULTS = ('detector failed', 'CUDA error', 'illegal memory access', 'illegal instruction',
+          'process has died')
 MAX_FAULTS = 3
 
 
@@ -272,6 +276,7 @@ def run_block(name, cfg, out_dir, fm, attempts=6):
            + ' '.join(shlex.quote(a) for a in eval_args(cfg['eval'])))
     summary = host_dir / 'summary.csv'
     attempt = faults = 0
+    rows_at_fault = -1
     while attempt < attempts:
         attempt += 1
         if free_gb() < MIN_FREE_GB:
@@ -296,26 +301,36 @@ def run_block(name, cfg, out_dir, fm, attempts=6):
                 # turns every later run into "not detected"; catch it while the block runs
                 fault, _ = stack_fault()
                 if low_mem or fault:
+                    # Killing docker exec leaves run_eval running in the container: stop the
+                    # container before truncating, or a late row survives the truncation
                     proc.kill()
                     proc.wait()
+                    fm.stop()
                     break
                 good_rows = summary_rows(summary)
         end_fault, stack_log = stack_fault()
         fault = fault or end_fault
         (host_dir.parent / f'{name}.stack.log').write_text(stack_log)
-        if low_mem:
+        if low_mem or fault:
+            fm.stop()  # fresh process, fresh CUDA context; run_eval is gone for sure
             truncate_summary(summary, good_rows)
+            # A killed run_eval never reached its cleanup: a moved target, dimmed light or
+            # occluder would stay in the world. A fresh simulation is back to nominal.
+            start_sim()
+        if low_mem:
             wait_for_memory(fm)
             attempt -= 1  # not the sim's fault
             continue
         if fault:
+            if good_rows > rows_at_fault:
+                faults = 0  # progress since the last fault: count isolated blips separately
             faults += 1
-            truncate_summary(summary, good_rows)
-            log(f'{name}: stack fault ({faults}/{MAX_FAULTS}), runs since the last check '
-                f'discarded: {fault}')
+            rows_at_fault = good_rows
+            log(f'{name}: infrastructure fault ({faults}/{MAX_FAULTS}), runs since the last '
+                f'check discarded and repeated: {fault}')
             if faults >= MAX_FAULTS:
-                raise RuntimeError(f'detector keeps failing: {fault}')
-            fm.stop()  # fresh process, fresh CUDA context
+                raise RuntimeError(f'infrastructure fault keeps coming back (not a model '
+                                   f'result): {fault}')
             attempt -= 1
             continue
         if proc.returncode == 0:

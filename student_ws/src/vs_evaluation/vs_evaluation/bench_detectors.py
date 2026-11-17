@@ -37,6 +37,8 @@ CONDITIONS = {'main_dino_sam2': 'nominal', 'rob_occl40': 'occlusion 40%',
               'rob_light30': 'light 30%', 'rob_light150': 'light 150%'}
 DETECTORS = {
     'grounding_dino': {}, 'owlv2': {}, 'yolo_world': {}, 'florence2': {}, 'sam3': {},
+    'grounding_dino_base': {'name': 'grounding_dino', 'model_id': 'IDEA-Research/grounding-dino-base'},
+    'yoloe': {},
     # ~8 s per call (it repeats its boxes up to the token limit): same subset as Opus
     'locate_anything': {'conditions': 1, 'starts': ['S1', 'S4', 'S8']},
     'qwen3vl_8b': {'name': 'vlm', 'model': 'qwen3-vl:8b-instruct', 'conditions': 2},
@@ -44,6 +46,8 @@ DETECTORS = {
     # Each call is a CLI round trip on the subscription: a small, fixed subset
     'opus55': {'name': 'vlm', 'model': 'claude-opus-5-5', 'url': 'http://localhost:11436/v1',
                'conditions': 1, 'starts': ['S1', 'S4', 'S8']},
+    'gpt6_astra': {'name': 'vlm', 'model': 'gpt-6-astra', 'url': 'http://localhost:11436/v1',
+                   'conditions': 1, 'starts': ['S1', 'S4', 'S8']},
 }
 FIELDS = ['detector', 'condition', 'image', 'object', 'level', 'prompt', 'visible_frac',
           'n_dets', 'iou', 'correct', 'false_positive', 'latency_s']
@@ -104,18 +108,22 @@ def load_frames(campaign, targets_cfg, smoke):
     for block, condition in CONDITIONS.items():
         for png in sorted(glob.glob(os.path.join(campaign, block, 'images', '*.png'))):
             meta = png[:-4] + '.json'
-            if not os.path.exists(meta):
+            name = os.path.basename(png)[:-4]
+            # Reference frames are taken before the occluder or light change: nominal only
+            if not os.path.exists(meta) or (condition != 'nominal' and name.endswith('_reference')):
                 continue
             view = json.load(open(meta))
             img = cv2.cvtColor(cv2.imread(png), cv2.COLOR_BGR2RGB)
             h, w = img.shape[:2]
             objects = {}
-            for name in PROMPTS:
-                box, frac = gt_box(view, object_points(targets_cfg[name], name), w, h)
+            # Under occlusion only the occluded target is a test case; the others are not covered
+            candidates = [view['target']] if condition.startswith('occlusion') else list(PROMPTS)
+            for obj in candidates:
+                box, frac = gt_box(view, object_points(targets_cfg[obj], obj), w, h)
                 if box is not None and frac >= 0.5:
-                    objects[name] = (box, frac)
+                    objects[obj] = (box, frac)
             frames.append({'block': block, 'condition': condition,
-                           'image': os.path.basename(png)[:-4], 'rgb': img, 'objects': objects})
+                           'image': name, 'rgb': img, 'objects': objects})
     if smoke:
         frames = [f for f in frames if f['image'].endswith('_S1')][:2]
     return frames
@@ -145,7 +153,7 @@ def unload_ollama(url='http://localhost:11434'):
 
 def make_detector(key, spec):
     from vs_perception.detectors import DETECTORS as REGISTRY
-    opts = {k: v for k, v in spec.items() if k in ('model', 'url')}
+    opts = {k: v for k, v in spec.items() if k in ('model', 'url', 'model_id')}
     if spec.get('name') == 'vlm':
         opts['timeout'] = 300  # the first call loads the model into the server
     det = REGISTRY.create(spec.get('name', key), device='cuda', score_threshold=0.3, **opts)
@@ -176,9 +184,10 @@ def main():
     print(f'{len(frames)} frames, {sum(len(f["objects"]) for f in frames)} objects', flush=True)
 
     import torch
+    failed = []
     with open(out_path, 'a', newline='') as fh:
         writer = csv.DictWriter(fh, FIELDS)
-        if not done:
+        if fh.tell() == 0:  # also after a crash that left only the header behind
             writer.writeheader()
         for key in args.detectors:
             if key in done:
@@ -195,6 +204,7 @@ def main():
                 det.detect(subset[0]['rgb'], 'red can')  # warm-up, not timed
             except Exception as exc:  # e.g. a VLM server that is not up: keep the others
                 print(f'{key}: load failed: {exc}', flush=True)
+                failed.append(key)
                 continue
             rows = []
             # Same prompt back to back: models that encode the text once per prompt change
@@ -228,6 +238,9 @@ def main():
             del det
             gc.collect()
             torch.cuda.empty_cache()
+    if failed:  # visible to run_campaign.py instead of a silently shorter table
+        print(f'models that did not load: {failed}', flush=True)
+        raise SystemExit(1)
 
 
 if __name__ == '__main__':
