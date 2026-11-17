@@ -21,9 +21,11 @@ from pathlib import Path
 import yaml
 
 REPO = Path(__file__).resolve().parent.parent
-# Same compose files as the shell (Linux, AMD, ...); the WSL set is only the default
-COMPOSE = os.environ.get('COMPOSE_FILE',
-                         'docker-compose.yml:docker-compose.fm.yml:docker-compose.wsl.yml')
+# Same compose files as the shell (Linux, AMD, WSL, ...). Taken from the environment only, so that
+# without it docker compose reads .env exactly like ./stack.sh and ./dev.sh do. A hard-coded WSL
+# default here would mount /dev/dxg on a native Ubuntu host and every `docker compose run` fails
+# with "error gathering device information while adding custom device /dev/dxg".
+COMPOSE = os.environ.get('COMPOSE_FILE')
 ROS_ENV = ('source /opt/ros/jazzy/setup.bash && source /ws/install/setup.bash && '
            'source /ws/student/install/setup.bash')
 # The Ollama on the Windows host (Vulkan): llama.cpp's CUDA kernels crash sporadically on this
@@ -48,7 +50,7 @@ def log(msg):
 
 
 def sh(cmd, check=False, capture=True, timeout=None):
-    env = {**os.environ, 'COMPOSE_FILE': COMPOSE}
+    env = {**os.environ, **({'COMPOSE_FILE': COMPOSE} if COMPOSE else {})}
     out = subprocess.run(cmd, shell=isinstance(cmd, str), cwd=REPO, env=env, text=True,
                          capture_output=capture, timeout=timeout)
     if check and out.returncode != 0:
