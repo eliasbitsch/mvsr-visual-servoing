@@ -41,6 +41,9 @@ DETECTORS = {
     'locate_anything': {'conditions': 1, 'starts': ['S1', 'S4', 'S8']},
     'qwen3vl_8b': {'name': 'vlm', 'model': 'qwen3-vl:8b-instruct', 'conditions': 2},
     'gemma4_e4b': {'name': 'vlm', 'model': 'gemma4:e4b', 'conditions': 2},
+    # Small VLMs for a 4 GB GPU (qwen3-vl-gpu:4b: scripts/ollama/qwen3-vl-gpu-4b.Modelfile)
+    'qwen3vl_4b': {'name': 'vlm', 'model': 'qwen3-vl-gpu:4b', 'conditions': 2},
+    'gemma4_e2b': {'name': 'vlm', 'model': 'gemma4:e2b', 'conditions': 2},
     # Each call is a CLI round trip on the subscription: a small, fixed subset
     'opus55': {'name': 'vlm', 'model': 'claude-opus-5-5', 'url': 'http://localhost:11436/v1',
                'conditions': 1, 'starts': ['S1', 'S4', 'S8']},
