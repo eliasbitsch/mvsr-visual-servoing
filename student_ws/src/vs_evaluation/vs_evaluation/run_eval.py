@@ -466,8 +466,11 @@ def main():
         with open(summary_path) as fh:
             reader = csv.DictReader(fh)
             old_rows = list(reader)
+            # Inside the with: for an empty file (an attempt stopped before its first run)
+            # DictReader reads the header only on this access, which failed on the closed file
+            fieldnames = reader.fieldnames
         done = {(r['target'], int(r['start'])) for r in old_rows}
-        if reader.fieldnames and reader.fieldnames != SUMMARY_FIELDS:
+        if fieldnames and fieldnames != SUMMARY_FIELDS:
             # Started with an older run_eval (fewer columns): rewrite under the current header,
             # the new columns stay empty for the old rows, instead of appending misaligned rows
             with open(summary_path, 'w', newline='') as fh:
