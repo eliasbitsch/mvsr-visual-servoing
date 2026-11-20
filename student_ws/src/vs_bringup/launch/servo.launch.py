@@ -24,6 +24,8 @@ def generate_launch_description():
         DeclareLaunchArgument('detector_period', default_value='1.0'),
         DeclareLaunchArgument('detector_model', default_value='',
                               description='Weights variant, e.g. IDEA-Research/grounding-dino-base'),
+        DeclareLaunchArgument('verifier', default_value='none',
+                              description='Check detector boxes against the prompt, e.g. siglip'),
         DeclareLaunchArgument('detect_on_loss', default_value='false',
                               description='Run the detector only while no track exists'),
         DeclareLaunchArgument('auto_start', default_value='false',
@@ -44,7 +46,8 @@ def generate_launch_description():
                                   'tracker': arg('tracker'), 'refiner': arg('refiner'),
                                   'detector_period': arg('detector_period'),
                                   'detect_on_loss': arg('detect_on_loss'),
-                                  'detector_model': arg('detector_model')}]),
+                                  'detector_model': arg('detector_model'),
+                                  'verifier': arg('verifier')}]),
         Node(package='vs_control', executable='ibvs_node', output='screen',
              parameters=[params, {'auto_start': arg('auto_start')}]),
         # Typed commands on /vs/command ("fahre über die rote Dose"); type them with

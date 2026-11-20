@@ -25,6 +25,7 @@ from vs_perception.detectors import DETECTORS
 from vs_perception.image_utils import from_rgb, to_rgb
 from vs_perception.refiners import REFINERS
 from vs_perception.trackers import TRACKERS, NoTracker
+from vs_perception.verifiers import VERIFIERS
 from vs_perception.device import resolve_device
 
 
@@ -46,6 +47,9 @@ class PerceptionNode(Node):
             'max_rate': 0.0,
             # Variant of the detector's weights, e.g. IDEA-Research/grounding-dino-base ('' = default)
             'detector_model': '',
+            # Second check of every detector box against the prompt (verifiers.py); 'none' keeps
+            # all boxes. Threshold < 0 = the verifier's calibrated default
+            'verifier': 'none', 'verifier_threshold': -1.0,
             # Set by the node itself: "<detector>|<model>" once that detector is loaded
             'detector_loaded': '',
         }
@@ -71,6 +75,10 @@ class PerceptionNode(Node):
         self.detector = self.create_detector(self.det_name, self.det_model)
         self.refiner = REFINERS.create(p['refiner'], device=self.device)
         self.refiner.load()
+        self.verifier = VERIFIERS.create(
+            p['verifier'], device=self.device,
+            threshold=p['verifier_threshold'] if p['verifier_threshold'] >= 0 else None)
+        self.verifier.load()
         self.tracker_name = p['tracker']
         self.tracker = TRACKERS.create(self.tracker_name, device=self.device)
         self.tracker.load()
@@ -193,6 +201,15 @@ class PerceptionNode(Node):
                 kind = 'detector request failed' if isinstance(exc, OSError) else 'detector failed'
                 self.get_logger().error(f'{kind}: {exc}')
                 dets = []
+            # Inside the timed span: the verifier's cost is part of the detector latency
+            try:
+                n = len(dets)
+                dets = self.verifier.filter(img, prompt, dets)
+                if len(dets) < n:
+                    self.get_logger().info(f'verifier dropped {n - len(dets)} of {n} boxes '
+                                           f'for "{prompt}"', throttle_duration_sec=2.0)
+            except Exception as exc:  # a broken verifier must not stop the detections
+                self.get_logger().error(f'verifier failed, boxes kept: {exc}')
             if self.delay > 0:
                 time.sleep(self.delay)
             latency = time.monotonic() - t0

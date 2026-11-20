@@ -170,6 +170,9 @@ def main():
     ap.add_argument('--detectors', nargs='+', default=list(DETECTORS), choices=list(DETECTORS))
     ap.add_argument('--targets-yaml', help='default: vs_sim share directory')
     ap.add_argument('--smoke', action='store_true', help='two frames per detector')
+    ap.add_argument('--verifier', default='none',
+                    help='also record each detector with this box verifier (vs_perception.'
+                         'verifiers) as "<detector>+<verifier>": same detections, filtered')
     args = ap.parse_args()
 
     path = args.targets_yaml
@@ -187,13 +190,22 @@ def main():
     print(f'{len(frames)} frames, {sum(len(f["objects"]) for f in frames)} objects', flush=True)
 
     import torch
+    verifier = None
+    if args.verifier != 'none':
+        from vs_perception.verifiers import VERIFIERS
+        verifier = VERIFIERS.create(args.verifier, device='cuda')
+        verifier.load()
     failed = []
     with open(out_path, 'a', newline='') as fh:
         writer = csv.DictWriter(fh, FIELDS)
         if fh.tell() == 0:  # also after a crash that left only the header behind
             writer.writeheader()
         for key in args.detectors:
-            if key in done:
+            vkey = f'{key}+{args.verifier}' if verifier else None
+            # The raw rows are written only if missing, so a detector benchmarked before can
+            # get its verified variant without duplicating its own rows
+            write_raw = key not in done
+            if not write_raw and (vkey is None or vkey in done):
                 print(f'{key}: done, skipped', flush=True)
                 continue
             spec = DETECTORS[key]
@@ -209,7 +221,19 @@ def main():
                 print(f'{key}: load failed: {exc}', flush=True)
                 failed.append(key)
                 continue
-            rows = []
+            rows, vrows = [], []
+
+            def result(det_key, frame, name, level, prompt, box, frac, dets, latency):
+                best = max(dets, key=lambda d: d.score) if dets else None
+                score = iou(best.box, box) if best is not None and box is not None else 0.0
+                return {'detector': det_key, 'condition': frame['condition'],
+                        'image': frame['image'], 'object': name, 'level': level,
+                        'prompt': prompt, 'visible_frac': round(frac, 3),
+                        'n_dets': len(dets), 'iou': round(score, 4),
+                        'correct': int(box is not None and score >= IOU_OK),
+                        'false_positive': int(box is None and bool(dets)),
+                        'latency_s': round(latency, 4)}
+
             # Same prompt back to back: models that encode the text once per prompt change
             # (YOLO-World) are timed as in the closed loop, where the prompt is fixed
             jobs = sorted(((q[2], i, frame, q) for i, frame in enumerate(subset)
@@ -222,22 +246,22 @@ def main():
                     print(f'{key} {frame["image"]} "{prompt}": {exc}', flush=True)
                     dets = []
                 latency = time.monotonic() - t0
-                best = max(dets, key=lambda d: d.score) if dets else None
-                score = iou(best.box, box) if best is not None and box is not None else 0.0
-                rows.append({'detector': key, 'condition': frame['condition'],
-                             'image': frame['image'], 'object': name, 'level': level,
-                             'prompt': prompt, 'visible_frac': round(frac, 3),
-                             'n_dets': len(dets), 'iou': round(score, 4),
-                             'correct': int(box is not None and score >= IOU_OK),
-                             'false_positive': int(box is None and bool(dets)),
-                             'latency_s': round(latency, 4)})
-            writer.writerows(rows)
-            fh.flush()
-            pos = [r for r in rows if r['level'] != 'negative']
-            neg = [r for r in rows if r['level'] == 'negative']
-            print(f'{key}: {len(rows)} queries, correct {np.mean([r["correct"] for r in pos]):.2f}, '
-                  f'FP on negatives {np.mean([r["false_positive"] for r in neg]):.2f}, '
-                  f'median latency {np.median([r["latency_s"] for r in rows]):.3f} s', flush=True)
+                rows.append(result(key, frame, name, level, prompt, box, frac, dets, latency))
+                if verifier:
+                    t1 = time.monotonic()
+                    kept = verifier.filter(frame['rgb'], prompt, list(dets))
+                    vrows.append(result(vkey, frame, name, level, prompt, box, frac, kept,
+                                        latency + time.monotonic() - t1))
+            for k, rs, write in ((key, rows, write_raw), (vkey, vrows, verifier is not None)):
+                if not write:
+                    continue
+                writer.writerows(rs)
+                fh.flush()
+                pos = [r for r in rs if r['level'] != 'negative']
+                neg = [r for r in rs if r['level'] == 'negative']
+                print(f'{k}: {len(rs)} queries, correct {np.mean([r["correct"] for r in pos]):.2f}, '
+                      f'FP on negatives {np.mean([r["false_positive"] for r in neg]):.2f}, '
+                      f'median latency {np.median([r["latency_s"] for r in rs]):.3f} s', flush=True)
             del det
             gc.collect()
             torch.cuda.empty_cache()
