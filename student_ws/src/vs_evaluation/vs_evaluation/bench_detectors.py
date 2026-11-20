@@ -46,6 +46,7 @@ DETECTORS = {
     # Small VLMs for a 4 GB GPU (qwen3-vl-gpu:4b: scripts/ollama/qwen3-vl-gpu-4b.Modelfile)
     'qwen3vl_4b': {'name': 'vlm', 'model': 'qwen3-vl-gpu:4b', 'conditions': 2},
     'gemma4_e2b': {'name': 'vlm', 'model': 'gemma4:e2b', 'conditions': 2},
+    'gemma4_e2b_nothink': {'name': 'vlm', 'model': 'gemma4:e2b', 'think': 0, 'conditions': 2},
     # Each call is a CLI round trip on the subscription: a small, fixed subset
     'opus55': {'name': 'vlm', 'model': 'claude-opus-5-5', 'url': 'http://localhost:11436/v1',
                'conditions': 1, 'starts': ['S1', 'S4', 'S8']},
@@ -156,7 +157,7 @@ def unload_ollama(url='http://localhost:11434'):
 
 def make_detector(key, spec):
     from vs_perception.detectors import DETECTORS as REGISTRY
-    opts = {k: v for k, v in spec.items() if k in ('model', 'url', 'model_id')}
+    opts = {k: v for k, v in spec.items() if k in ('model', 'url', 'model_id', 'think')}
     if spec.get('name') == 'vlm':
         opts['timeout'] = 300  # the first call loads the model into the server
     det = REGISTRY.create(spec.get('name', key), device='cuda', score_threshold=0.3, **opts)

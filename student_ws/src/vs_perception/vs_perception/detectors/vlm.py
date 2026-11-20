@@ -90,6 +90,11 @@ class Vlm(Detector):
         # Longest image side sent to the model, 0 = full resolution. Fewer pixels -> fewer
         # vision tokens -> faster answer; boxes come back normalised, so nothing else changes.
         self.max_side = int(self.options.get('max_side', os.environ.get('VS_VLM_MAX_SIDE', 0)))
+        # Gemma 4 answers directly when the object is in view but starts to reason when it is not
+        # (bench, RTX 3050 Ti: absent objects 4.2 s median, up to 15 s; present ~2 s either way).
+        # think=0 asks the server to skip that, which bounds the answer time; unset = default
+        think = str(self.options.get('think', os.environ.get('VS_VLM_THINK', ''))).lower()
+        self.no_think = think in ('0', 'false', 'off', 'no')
         # Fail early with a clear message instead of on the first frame
         names = [m['id'] for m in _get_json(f'{self.url}/models')['data']]
         if self.model not in names:
@@ -114,6 +119,8 @@ class Vlm(Detector):
                 {'type': 'text', 'text': template.format(prompt=prompt)},
             ]}],
         }
+        if self.no_think:
+            body['reasoning_effort'] = 'none'  # Ollama's OpenAI API: thinking off
         text = _get_json(f'{self.url}/chat/completions', body,
                          self.timeout)['choices'][0]['message']['content']
 

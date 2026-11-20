@@ -112,14 +112,23 @@ IoU ≥ 0.5 per prompt level, false positives on prompts of absent objects):
 | OWLv2 | 0.48 | 0.27 | 0.26 | 0.29 | 0.00 | 0.52 s |
 | Qwen3-VL-4B | 0.70 | 0.57 | 0.56 | 0.59 | 0.00 | 1.16 s |
 | Gemma 4 E2B | 0.96 | 0.33 | 0.95 | 0.42 | 0.10 | 1.71 s |
+| Gemma 4 E2B, thinking off | 0.95 | 0.29 | 0.88 | 0.46 | 0.06 | 2.26 s* |
+
+\* separate run right after a campaign on a warm GPU; with the object in view both modes take
+~2 s in a direct back-to-back test, the difference is in the absent-object case (see below).
 
 **Reading.**
 - Qwen3-VL-4B does not call the can seen from above a "can" (nor a "red cylinder"); asked for a
   "red object" it returns the right box. It never claims an absent object, but in the closed
   loop it only finds the box, so it fails at the reference pose of the other three targets.
 - Gemma 4 E2B finds every object but its boxes are looser; SAM 2 seeded from them converges a
-  few mm off (green_cup 11 mm median). Thinking is on by default (4.8 s instead of 0.4 s per
-  answer); the tracker carries the loop in between, so it did not cost convergence.
+  few mm off (green_cup 11 mm median).
+- Gemma 4 decides itself whether to think: with the object in view it answers directly (~2 s),
+  for an absent object it reasons first (4.2 s median, up to 15 s). With thinking off
+  (`vlm_think: false`, block `det_gemma4_e2b_nothink`) the answer time stays bounded (absent:
+  1.2 s median, at most 2.4 s), false positives on absent objects drop from 0.10 to 0.06,
+  attribute accuracy is unchanged (0.96 / 0.95). Closed loop: 16/32 vs 14/32 successful,
+  mean convergence 7.0 s vs 8.0 s, within the run-to-run spread of a VLM.
 - On 4 GB both are usable as detectors seeding a tracker, not as a per-frame localiser.
 
 ## 4. SigLIP 2 box verifier
@@ -161,8 +170,20 @@ Grounding DINO + SAM 2, arm at red_can start S1 (can, box, cup and ball in view)
 
 Without the verifier the arm drives towards whatever object Grounding DINO picked for a prompt
 that matches nothing; with it, no box survives and the controller never gets a target.
-Normal operation is unaffected: `det_dino_siglip` smoke run, red_can S1 converged in 4.6 s to
-3.6 mm (main configuration: 5.9 s, 3.9 mm).
+
+**Normal operation** (`det_dino_siglip` vs `main_dino_sam2`, 4 targets × 8 starts):
+
+| | Verifier none | Verifier siglip |
+|---|---|---|
+| Converged | 32/32 | 32/32 |
+| Within 5 mm / 2° | 25/32 | 28/32 |
+| Convergence time, median (without the 1 s hold) | 5.7 s | 5.0 s |
+| Final position error, median | 4.28 mm | 4.24 mm |
+
+The verifier costs nothing in normal operation. The three extra successes are runs that end
+just above or below the 5 mm tolerance (see section 2), not an effect of the verifier.
+(`main_dino_sam2` was recorded before run_eval subtracted the hold time; its 6.7 s raw median
+is 5.7 s on the same definition.)
 
 ## Sources
 

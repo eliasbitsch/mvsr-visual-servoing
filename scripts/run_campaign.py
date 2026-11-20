@@ -125,6 +125,8 @@ class Fm:
         if launch.get('vlm_model'):
             url = CLI_VLM_URL if launch['vlm_model'].startswith(('claude', 'gpt')) else OLLAMA_URL
             env = ['-e', f'VS_VLM_URL={url}/v1', '-e', f'VS_VLM_MODEL={launch["vlm_model"]}']
+            if 'vlm_think' in launch:  # vlm_think: false = thinking models answer directly
+                env += ['-e', f'VS_VLM_THINK={int(bool(launch["vlm_think"]))}']
         cmd = ('cd /ws/student && colcon build --symlink-install && source install/setup.bash '
                f'&& exec ros2 launch vs_bringup servo.launch.py {args}')
         sh(['docker', 'compose', 'run', '-d', '--name', 'vs-fm', *env, 'fm', 'bash', '-lc', cmd],

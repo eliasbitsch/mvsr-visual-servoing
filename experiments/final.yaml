@@ -66,6 +66,10 @@ blocks:
     launch: {detector: vlm, vlm_model: 'qwen3-vl-gpu:4b'}
   det_gemma4_e2b:
     launch: {detector: vlm, vlm_model: 'gemma4:e2b'}
+  # Same model with thinking off: it only thinks when the object is not in view (4.2 s median,
+  # up to 15 s, instead of 1.2 s / at most 2.4 s); with the object in view no difference
+  det_gemma4_e2b_nothink:
+    launch: {detector: vlm, vlm_model: 'gemma4:e2b', vlm_think: false}
   det_opus55:
     launch: {detector: vlm, vlm_model: claude-opus-5-5}
     eval: {timeout: 90}
@@ -88,7 +92,7 @@ chunks:
   latency: [lat_p02, lat_p1, lat_p5, lat_p5_d1, lat_notracker]
   local: [det_dino_base, det_owlv2, det_yolo_world, det_yoloe, det_florence2, det_sam3,
           det_locate_anything, det_qwen3vl_8b, det_gemma4_e4b, det_qwen3vl_4b, det_gemma4_e2b,
-          det_dino_siglip]
+          det_gemma4_e2b_nothink, det_dino_siglip]
   # Same launch config as main_dino_sam2 (lambda = 0.6, the reference of the gain study)
   gain: [gain_0p3, gain_1p0, gain_1p5, gain_2p5]
   cloud: [det_opus55, det_gpt6_astra]
