@@ -462,6 +462,37 @@ class Demo(Recorder):
             self.set_param('prompt', self.text)  # fresh detection with the new model
         return True
 
+    def set_verifier(self, name, timeout=300.0):
+        """Switch the box verifier at runtime ('siglip' or 'none'); the first load downloads it.
+        With it on, a prompt for an absent object ("purple bottle") gives no target at all."""
+        from rcl_interfaces.msg import Parameter as RosParam, ParameterType, ParameterValue
+        from rcl_interfaces.srv import GetParameters, SetParameters
+
+        def loaded():
+            fut = self.get_cli.call_async(GetParameters.Request(names=['verifier_loaded']))
+            rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
+            return fut.result().values[0].string_value if fut.result() else ''
+        if loaded() == name:
+            return True
+        value = ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=name)
+        self.set_cli.wait_for_service(timeout_sec=30.0)
+        fut = self.set_cli.call_async(
+            SetParameters.Request(parameters=[RosParam(name='verifier', value=value)]))
+        rclpy.spin_until_future_complete(self, fut, timeout_sec=10.0)
+        t0, state = time.monotonic(), ''
+        while time.monotonic() - t0 < timeout:
+            state = loaded()
+            if state == name or state.startswith('failed'):
+                break
+            self.spin_for(1.0)
+        if state != name:
+            print(f'verifier switch to {name} did not finish: {state or "timeout"}')
+            return False
+        print(f'verifier {name} active')
+        if self.text:
+            self.set_param('prompt', self.text)  # fresh detection, checked by the new verifier
+        return True
+
     def set_latency(self, period=None, delay=None):
         """Detector period and an artificial extra delay per call (inference-time study)."""
         if period is not None:

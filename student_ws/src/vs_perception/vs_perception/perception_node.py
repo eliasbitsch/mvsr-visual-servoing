@@ -50,6 +50,8 @@ class PerceptionNode(Node):
             # Second check of every detector box against the prompt (verifiers.py); 'none' keeps
             # all boxes. Threshold < 0 = the verifier's calibrated default
             'verifier': 'none', 'verifier_threshold': -1.0,
+            # Set by the node itself: the verifier name once it is loaded (runtime switch)
+            'verifier_loaded': '',
             # Set by the node itself: "<detector>|<model>" once that detector is loaded
             'detector_loaded': '',
         }
@@ -75,10 +77,10 @@ class PerceptionNode(Node):
         self.detector = self.create_detector(self.det_name, self.det_model)
         self.refiner = REFINERS.create(p['refiner'], device=self.device)
         self.refiner.load()
-        self.verifier = VERIFIERS.create(
-            p['verifier'], device=self.device,
-            threshold=p['verifier_threshold'] if p['verifier_threshold'] >= 0 else None)
-        self.verifier.load()
+        self.verifier_name = p['verifier']
+        self.verifier_threshold = p['verifier_threshold']
+        self.reload_verifier = threading.Event()
+        self.verifier = self.create_verifier()
         self.tracker_name = p['tracker']
         self.tracker = TRACKERS.create(self.tracker_name, device=self.device)
         self.tracker.load()
@@ -122,9 +124,25 @@ class PerceptionNode(Node):
         det.load()
         return det
 
+    def create_verifier(self):
+        threshold = self.verifier_threshold if self.verifier_threshold >= 0 else None
+        verifier = VERIFIERS.create(self.verifier_name, device=self.device, threshold=threshold)
+        verifier.load()
+        return verifier
+
     def mark_loaded(self):
         self.set_parameters([Parameter('detector_loaded', Parameter.Type.STRING,
-                                       f'{self.det_name}|{self.det_model}')])
+                                       f'{self.det_name}|{self.det_model}'),
+                             Parameter('verifier_loaded', Parameter.Type.STRING,
+                                       self.verifier_name)])
+
+    def switch_verifier(self):
+        """Runs in the detector thread, between two detections (live demo switch)."""
+        self.reload_verifier.clear()
+        self.verifier = self.create_verifier()
+        self.track_box = None  # the next detection is checked by the new verifier
+        self.mark_loaded()
+        self.get_logger().info(f'verifier "{self.verifier_name}" ready')
 
     def switch_detector(self):
         """Runs in the detector thread: free the old model, load the requested one."""
@@ -160,6 +178,12 @@ class PerceptionNode(Node):
                 self.delay = c.value
             elif c.name == 'max_rate':
                 self.max_rate = c.value
+            elif c.name == 'verifier' and hasattr(self, 'reload_verifier'):
+                self.verifier_name = c.value
+                self.reload_verifier.set()
+            elif c.name == 'verifier_threshold' and hasattr(self, 'verifier'):
+                self.verifier_threshold = c.value
+                self.verifier.threshold = c.value if c.value >= 0 else type(self.verifier).threshold
             elif c.name in ('detector', 'detector_model') and hasattr(self, 'reload_detector'):
                 if c.name == 'detector':
                     self.det_name = c.value
@@ -177,6 +201,14 @@ class PerceptionNode(Node):
                 except Exception as exc:  # keep the node alive; report through the status
                     self.get_logger().error(f'detector switch failed: {exc}')
                     self.set_parameters([Parameter('detector_loaded', Parameter.Type.STRING,
+                                                   f'failed|{exc}'[:300])])
+                continue
+            if self.reload_verifier.is_set():
+                try:
+                    self.switch_verifier()
+                except Exception as exc:  # keep the previous verifier
+                    self.get_logger().error(f'verifier switch failed: {exc}')
+                    self.set_parameters([Parameter('verifier_loaded', Parameter.Type.STRING,
                                                    f'failed|{exc}'[:300])])
                 continue
             if self.detector is None:

@@ -28,7 +28,7 @@ from std_srvs.srv import Trigger
 from trajectory_msgs.msg import JointTrajectoryPoint
 from vs_interfaces.msg import ObjectFeatures
 
-from vs_perception.command_parser import GOTO, STOP, parse_command
+from vs_perception.command_parser import STOP, parse_command
 
 
 class CommandNode(Node):

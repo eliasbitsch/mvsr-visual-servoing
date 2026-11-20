@@ -132,14 +132,23 @@ def _(mo):
         'Qwen3-VL 8B': ('vlm', 'qwen3-vl:8b-instruct'), 'Gemma 4 E4B': ('vlm', 'gemma4:e4b'),
     }, value='Grounding DINO tiny', label='foundation model')
     btn_model = mo.ui.run_button(label='load model')
+    # SigLIP 2 checks every detector box against the prompt: try "purple bottle" with and without
+    verifier_switch = mo.ui.switch(value=False, label='SigLIP box verifier')
     return (btn_capture, btn_clear, btn_light, btn_lost, btn_model, btn_occlude, btn_reference,
-            btn_servo, btn_start, gz_gui, light, model_choice, occlusion)
+            btn_servo, btn_start, gz_gui, light, model_choice, occlusion, verifier_switch)
 
 
 @app.cell
 def _(btn_model, demo, mo, model_choice, set_tick):
     mo.stop(not btn_model.value, mo.md('*Swap the localisation model (first load downloads it)*'))
     demo.set_detector(*model_choice.value)
+    set_tick(lambda t: t + 1)
+    return
+
+
+@app.cell
+def _(demo, set_tick, verifier_switch):
+    demo.set_verifier('siglip' if verifier_switch.value else 'none')
     set_tick(lambda t: t + 1)
     return
 
@@ -153,10 +162,10 @@ def _(demo, gz_gui):
 @app.cell
 def _(btn_capture, btn_clear, btn_light, btn_lost, btn_model, btn_occlude, btn_reference,
       btn_servo, btn_start, gz_gui, light, mo, model_choice, occlusion, prompt_custom,
-      prompt_preset, servo_prompt, start, target):
+      prompt_preset, servo_prompt, start, target, verifier_switch):
     mo.vstack([
         mo.hstack([mo.md('## Pipeline, step by step'), gz_gui], justify='space-between'),
-        mo.hstack([model_choice, btn_model], justify='start'),
+        mo.hstack([model_choice, btn_model, verifier_switch], justify='start'),
         mo.hstack([target, start, prompt_preset], justify='start'),
         prompt_custom,
         mo.md(f'Prompt for the next reference: **"{servo_prompt}"**'),
