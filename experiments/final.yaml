@@ -28,6 +28,11 @@ blocks:
   gain_1p0: {eval: {gain: 1.0, targets: [red_can, blue_box]}}
   gain_1p5: {eval: {gain: 1.5, targets: [red_can, blue_box]}}
   gain_2p5: {eval: {gain: 2.5, targets: [red_can, blue_box]}}
+  # Same gains with latency compensation: the controller predicts the features 0.1 s ahead
+  # (measured dead time) with its last command, ibvs.predict_features
+  gainlc_1p0: {eval: {gain: 1.0, ibvs_param: [latency_compensation=0.1], targets: [red_can, blue_box]}}
+  gainlc_1p5: {eval: {gain: 1.5, ibvs_param: [latency_compensation=0.1], targets: [red_can, blue_box]}}
+  gainlc_2p5: {eval: {gain: 2.5, ibvs_param: [latency_compensation=0.1], targets: [red_can, blue_box]}}
 
   # Classic tracker as comparison
   main_dino_csrt:
@@ -94,7 +99,7 @@ chunks:
           det_locate_anything, det_qwen3vl_8b, det_gemma4_e4b, det_qwen3vl_4b, det_gemma4_e2b,
           det_gemma4_e2b_nothink, det_dino_siglip]
   # Same launch config as main_dino_sam2 (lambda = 0.6, the reference of the gain study)
-  gain: [gain_0p3, gain_1p0, gain_1p5, gain_2p5]
+  gain: [gain_0p3, gain_1p0, gain_1p5, gain_2p5, gainlc_1p0, gainlc_1p5, gainlc_2p5]
   cloud: [det_opus55, det_gpt6_astra]
 
 # After the closed-loop blocks

@@ -33,6 +33,16 @@ def wrap_angle(a):
     return (a + np.pi / 2) % np.pi - np.pi / 2
 
 
+def predict_features(s, twist, dt):
+    """Features dt seconds ahead if the camera keeps the twist (vx, vy, vz, wx, wy, wz):
+    first order, s + dt L(s) v. Compensates the dead time between the image and the command;
+    wx, wy are left out like in the control law (the node holds the optical axis vertical)."""
+    if dt <= 0.0:
+        return np.array(s, dtype=float)
+    v = np.array([twist[0], twist[1], twist[2], twist[5]])
+    return s + dt * interaction_matrix(s) @ v
+
+
 def control_law(s, s_star, gain, control_yaw):
     """v = -gain L^+ e. Returns the camera twist (vx, vy, vz, wx, wy, wz) and the error."""
     e = s - s_star

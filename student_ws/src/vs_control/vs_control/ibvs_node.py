@@ -42,6 +42,10 @@ PARAMS = {
     'max_linear_speed': 0.10, 'max_angular_speed': 0.5, 'joint_speed_scale': 0.5,
     'joint_limit_margin': 0.1, 'dls_damping': 0.05, 'feature_timeout': 0.5, 'lost_timeout': 2.0,
     'converged_threshold': 0.01, 'converged_hold_time': 1.0, 'auto_start': False,
+    # Dead time between the camera image and the joint command [s], 0 = off. With it the
+    # features are predicted that far ahead with the last commanded twist (ibvs.predict_features);
+    # the age of the features since they arrived here is added on top
+    'latency_compensation': 0.0,
     # Safety guard (see safety.py)
     'collision_margin': 0.01, 'safety_lookahead': 0.2, 'min_height': 0.03,
     'height_frames': ['tool0', 'camera_link'],
@@ -70,6 +74,7 @@ class IbvsNode(Node):
         # Yaw is only servoed if the reference view had a defined principal axis too
         self.desired_angle_valid = False
         self.last_joint_stamp = 0.0
+        self.last_twist = np.zeros(6)  # last commanded camera twist, for the latency compensation
 
         self.tf = Buffer()
         TransformListener(self.tf, self)
@@ -150,6 +155,7 @@ class IbvsNode(Node):
         def done(ok):
             self.active = ok
             self.converged_since = None
+            self.last_twist = np.zeros(6)
             self.get_logger().info('servoing started' if ok else 'controller switch failed')
         self.switch_controllers(self.p['velocity_controller'], self.p['position_controller'], done)
 
@@ -187,6 +193,7 @@ class IbvsNode(Node):
         self.cmd_pub.publish(Float64MultiArray(data=[float(x) for x in qd]))
 
     def halt(self, reason):
+        self.last_twist = np.zeros(6)  # the arm stands: nothing to predict from
         self.publish_joint_velocities(np.zeros(len(self.p['arm_joints'])))
         self.status_pub.publish(String(data=reason))
         self.get_logger().warn(f'holding: {reason}', throttle_duration_sec=2.0)
@@ -236,6 +243,9 @@ class IbvsNode(Node):
                                      p['desired_area'], p['desired_depth'])
         s_star = ibvs.normalised_features(u_star, v_star, p['desired_area'], p['desired_angle'],
                                           self.K, p['desired_area'], p['desired_depth'])
+        if p['latency_compensation'] > 0.0:
+            age = (self.get_clock().now() - self.features_time).nanoseconds * 1e-9
+            s = ibvs.predict_features(s, self.last_twist, p['latency_compensation'] + age)
         control_yaw = p['control_yaw'] and f.angle_valid and self.desired_angle_valid
         v_cam, e = ibvs.control_law(s, s_star, p['gain'], control_yaw)
 
@@ -265,6 +275,7 @@ class IbvsNode(Node):
         if reason:
             return self.halt(reason)
         self.publish_joint_velocities(qd)
+        self.last_twist = v_cam
         self.publish_diagnostics(f.header, v_cam, e)
 
     def publish_diagnostics(self, header, v_cam, e):

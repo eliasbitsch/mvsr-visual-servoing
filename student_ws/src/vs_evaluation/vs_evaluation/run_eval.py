@@ -452,6 +452,9 @@ def main():
                     help='move the target out of view after this many seconds (safe stop test)')
     ap.add_argument('--gain', type=float,
                     help='IBVS gain lambda for this evaluation (gain study); restored afterwards')
+    ap.add_argument('--ibvs-param', nargs='+', default=[], metavar='NAME=VALUE',
+                    help='other numeric ibvs_node parameters for this evaluation, e.g. '
+                         'latency_compensation=0.1; restored afterwards like --gain')
     ap.add_argument('--label', default='run', help='name part of the output folder')
     ap.add_argument('--resume', help='output folder of an interrupted run: append, skip done runs')
     ap.add_argument('--out', default='/root/vs_data/eval')
@@ -497,15 +500,23 @@ def main():
         rec.set_param('feature_timeout', args.feature_timeout, node='ibvs')
     # The campaign runner keeps the stack between blocks with the same launch config, so a gain
     # set here must not leak into the next block: remember the node's value and restore it
-    gain_before = rec.ibvs_param('gain', None)
+    overrides = dict(kv.split('=', 1) for kv in args.ibvs_param)
+    overrides = {k: float(v) for k, v in overrides.items()}
     if args.gain is not None:
-        if gain_before is None:  # could not restore it afterwards
-            raise RuntimeError('ibvs_node gain not readable, refusing to change it')
-        rec.set_param('gain', args.gain, node='ibvs')
+        overrides['gain'] = args.gain
+    before = {}
+    for name, value in overrides.items():
+        before[name] = rec.ibvs_param(name, None)
+        if before[name] is None:  # could not restore it afterwards
+            raise RuntimeError(f'ibvs_node {name} not readable, refusing to change it')
+    for name, value in overrides.items():
+        rec.set_param(name, value, node='ibvs')
     params = rec.perception_params()
     with open(os.path.join(out, 'config.json'), 'w') as fh:
         json.dump({**vars(args), 'perception': params,
-                   'ibvs_gain': rec.ibvs_param('gain', math.nan)}, fh, indent=2)
+                   'ibvs_gain': rec.ibvs_param('gain', math.nan),
+                   'ibvs_params': {n: rec.ibvs_param(n, math.nan) for n in overrides}},
+                  fh, indent=2)
     fixed = {'detector': params['detector'], 'detector_model': params.get('detector_model', ''),
              'tracker': params['tracker'],
              'detector_period': params['detector_period'],
@@ -572,8 +583,8 @@ def main():
     finally:
         rec.call('stop')
         restore(args)
-        if args.gain is not None:
-            rec.set_param('gain', gain_before, node='ibvs')
+        for name, value in before.items():
+            rec.set_param(name, value, node='ibvs')
     print(f'results in {out}', flush=True)
     rclpy.shutdown()
 

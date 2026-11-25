@@ -48,6 +48,9 @@ ibvs_node:
     lost_timeout: 2.0
     converged_threshold: 0.01
     converged_hold_time: 1.0
+    # Dead time [s] the controller predicts the features ahead (ibvs.predict_features), 0 = off.
+    # 0.1 cut the overshoot at high gains by 2-4x (docs/CONTROL_AND_SMALL_FMS.md, section 2a)
+    latency_compensation: 0.0
 
     collision_margin: 0.01
     safety_lookahead: 0.2

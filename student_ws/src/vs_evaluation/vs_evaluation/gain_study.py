@@ -2,7 +2,9 @@
 
     $VS_PYTHON -m vs_evaluation.gain_study --campaign /root/vs_data/eval/final
 
-Reads the gain_* blocks of the campaign (run_eval --gain) and main_dino_sam2 as the default gain;
+Reads the gain_* blocks of the campaign (run_eval --gain), the gainlc_* blocks (same gains with
+latency compensation, run_eval --ibvs-param latency_compensation=...) and main_dino_sam2 as the
+default gain;
 the gain comes from `ibvs_gain` in each block's config.json, for an older main_dino_sam2 without
 it from servo.yaml. Writes gain_study.csv (one row per run),
 gain_study_summary.csv (one row per gain and target) and gain_study.png into the campaign folder.
@@ -77,12 +79,23 @@ def block_gain(block_dir):
     return DEFAULT_GAIN if block_dir.name == DEFAULT_BLOCK else None
 
 
+def block_latency_comp(block_dir):
+    """Dead time the controller compensated in this block [s], 0 = off (also for blocks run
+    before the parameter existed)."""
+    cfg_path = block_dir / 'config.json'
+    if not cfg_path.exists():
+        return 0.0
+    value = json.loads(cfg_path.read_text()).get('ibvs_params', {}).get('latency_compensation')
+    return float(value) if value is not None and not np.isnan(value) else 0.0
+
+
 def collect(campaign):
     rows = []
     # Only the gain blocks and the main block: every other block changes more than the gain
     # (detector, occlusion, latency, ...), even though its config.json records the gain too
     blocks = [p for p in Path(campaign).iterdir()
-              if p.is_dir() and (p.name.startswith('gain_') or p.name == DEFAULT_BLOCK)]
+              if p.is_dir() and (p.name.startswith(('gain_', 'gainlc_'))
+                                 or p.name == DEFAULT_BLOCK)]
     for block_dir in sorted(blocks):
         gain = block_gain(block_dir)
         if gain is None or not (block_dir / 'summary.csv').exists():
@@ -93,7 +106,8 @@ def collect(campaign):
         hold = HOLD_TIME if 'conv_time_sim_s' not in summary.columns else 0.0
         for _, r in summary.iterrows():
             run_csv = block_dir / 'runs' / f'{r["target"]}_S{r["start"]}.csv'
-            row = {'block': block_dir.name, 'gain': gain, 'target': r['target'],
+            row = {'block': block_dir.name, 'gain': gain,
+                   'latency_comp': block_latency_comp(block_dir), 'target': r['target'],
                    'start': r['start'], 'outcome': r['outcome'], 'success': r['success'],
                    # clip keeps nan (not converged) as nan; max(0.0, nan) would give 0.0
                    'conv_time_s': np.clip(r['conv_time_s'] - hold, 0.0, None),
@@ -112,7 +126,7 @@ def collect(campaign):
 def summarise(df):
     def q(p):
         return lambda x: x.quantile(p)
-    g = df.groupby(['gain', 'target'])
+    g = df.groupby(['gain', 'latency_comp', 'target'])
     return g.agg(runs=('start', 'size'), success=('success', 'mean'),
                  conv_median=('conv_time_s', 'median'), conv_q25=('conv_time_s', q(0.25)),
                  conv_q75=('conv_time_s', q(0.75)),
@@ -126,13 +140,14 @@ def summarise(df):
 def plot(summary, path):
     import matplotlib.pyplot as plt
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9, 3.5))
-    for target, d in summary.groupby('target'):
+    for (target, lc), d in summary.groupby(['target', 'latency_comp']):
         d = d.sort_values('gain')
+        name = f'{target} +LC {lc:g} s' if lc > 0 else target
         ax1.errorbar(d['gain'], d['conv_median'],
                      yerr=[d['conv_median'] - d['conv_q25'], d['conv_q75'] - d['conv_median']],
-                     marker='o', capsize=3, label=target)
-        ax2.plot(d['gain'], d['overshoot_mm_median'], marker='o', label=f'{target} median')
-        ax2.plot(d['gain'], d['overshoot_mm_max'], marker='x', ls='--', label=f'{target} max')
+                     marker='o', capsize=3, label=name)
+        ax2.plot(d['gain'], d['overshoot_mm_median'], marker='o', label=f'{name} median')
+        ax2.plot(d['gain'], d['overshoot_mm_max'], marker='x', ls='--', label=f'{name} max')
     ax1.set(xlabel='gain λ', ylabel='convergence time [s]', title='Convergence time (median, IQR)')
     ax2.set(xlabel='gain λ', ylabel='overshoot [mm]', title='Overshoot past the reference (ground truth)')
     for ax in (ax1, ax2):
