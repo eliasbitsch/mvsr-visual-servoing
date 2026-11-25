@@ -51,8 +51,9 @@ command and the first camera motion.
 - Linear and angular velocity are clamped separately: in saturation the 6D direction changes
   and the straight-line property is lost.
 - The stop criterion ‖e‖ < 0.01 mixes metres (x_n, y_n, a_n) and radians (α).
-- No latency compensation: features up to 0.5 s old are used as they are. This is where the
-  overshoot at high λ comes from.
+- Latency compensation is off by default (`latency_compensation: 0.0`): features up to 0.5 s
+  old are used as they are, which is where the overshoot at high λ comes from. Section 2a
+  measures the optional first-order prediction.
 - 180° ambiguity of symmetric shapes (start S7 of blue_box).
 
 ## 2. Gain study (λ vs convergence time and overshoot)
@@ -86,6 +87,57 @@ initial error, axes starting below 5 mm skipped.
   moved further during the hold. A fixed 5 mm tolerance therefore turns λ = 0.3 into 0/8 on
   red_can although every run converged. This is why the evaluation reports error distributions
   (as agreed with the prof) rather than one success rate.
+
+### 2a. Latency compensation
+
+The controller acts on features that are ~0.1 s old (dead time measured above, plus the age of
+the last feature message). With `latency_compensation: Δt > 0` (ibvs_node parameter) it first
+predicts them Δt + age ahead with its last commanded camera twist, `ŝ = s + Δt L(s) v`
+(`ibvs.predict_features`, first order, a Smith-predictor-like correction), and runs the control
+law on ŝ. Zero after a halt, so nothing is predicted from a stale command.
+`gainlc_*` blocks: λ ∈ {1.0, 1.5, 2.5} with Δt = 0.1 s, otherwise identical to `gain_*`
+(`run_eval --ibvs-param latency_compensation=0.1`, restored after the block).
+
+| λ | 1.0 | 1.0 + LC | 1.5 | 1.5 + LC | 2.5 | 2.5 + LC |
+|---|---|---|---|---|---|---|
+| Largest overshoot, blue_box [mm] | 6.7 | 3.0 | 10.9 | 3.6 | 19.3 | 5.0 |
+| Largest overshoot, red_can [mm] | 2.6 | 2.0 | 3.7 | 3.0 | 6.3 | 3.8 |
+| Convergence time, median, blue_box [s] | 5.5 | 5.2 | 4.0 | 3.4 | 2.0 | 2.7 |
+| Convergence time, median, red_can [s] | 3.9 | 3.7 | 2.6 | 2.1 | 1.5 | 1.4 |
+| Success (5 mm / 2°), blue_box | 8/8 | 8/8 | 8/8 | 8/8 | 6/8 | 8/8 |
+| Success (5 mm / 2°), red_can | 7/8 | 6/8 | 6/8 | 7/8 | 5/8 | 6/8 |
+
+**Reading.**
+- The worst-case overshoot drops by a factor of 2–4 on blue_box and by 18–39 % on red_can,
+  without slowing convergence (except blue_box at λ = 2.5, +0.7 s, where the speed limit is
+  active anyway). With compensation λ = 1.5 overshoots no more than λ = 1.0 without it.
+- At λ = 2.5 the two blue_box runs that failed without compensation succeed with it.
+- 8 runs per cell: the overshoot maxima are clear, the success differences of ±1 run are not.
+- The final error at λ = 1.0 on red_can gets larger (median 2.5 → 4.8 mm): with less overshoot
+  the camera approaches from one side and stops at the threshold, the stop-criterion effect
+  again (section 2b).
+- Recommendation: λ = 1.5 with `latency_compensation: 0.1` for speed; the default stays
+  λ = 0.6 without compensation, which is what all other blocks were run with.
+
+### 2b. Error metrics independent of the stop criterion
+
+`success` mostly measures where the controller stops (≈ 4–5 mm at λ = 0.6, see above).
+`vs_evaluation.error_metrics` takes the ground-truth error over time instead: share of runs that
+ever got below 10 / 5 / 2 mm and the median time to get there, smallest error reached, and the
+integral of the error over the first 15 s (IAE, after a converged run its last error is held).
+`$VS_PYTHON -m vs_evaluation.error_metrics --campaign /root/vs_data/eval/final`, notebook 6c.
+
+| red_can | λ 0.6 | λ 1.0 | λ 1.5 | λ 2.5 | λ 1.5 + LC | λ 2.5 + LC |
+|---|---|---|---|---|---|---|
+| Reached 5 mm | 8/8 | 7/8 | 6/8 | 5/8 | 7/8 | 6/8 |
+| Reached 2 mm | 0/8 | 3/8 | 5/8 | 5/8 | 4/8 | 5/8 |
+| Smallest error, median [mm] | 4.3 | 2.6 | 1.2 | 0.7 | 2.2 | 1.1 |
+| IAE over 15 s, median [mm·s] | 205 | 151 | 141 | 136 | 158 | 139 |
+
+At λ = 0.6 no red_can run ever gets below 2 mm: the method could, but the controller stops
+first. A smaller `converged_threshold` (or one in mm instead of mixed units) would lower the final
+error at every λ at the cost of time; the IAE shows that above λ ≈ 1.5 the gain no longer buys
+much (136–141 mm·s).
 
 ## 3. Small VLMs on a 4 GB GPU
 
